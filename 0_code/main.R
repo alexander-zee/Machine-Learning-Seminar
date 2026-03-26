@@ -30,16 +30,16 @@ portN=10
 RunParallel = FALSE
 pralleln = 1
 
-raw_data_path = '../Data/ret_characteristics/'
-data_chunk_path = '../Data/data_chunk_files_quantile/'
-tree_portfolio_path = '../Data/tree_portfolio_quantile/'
-ts32_path = '../Data/ts_portfolio/'
-ts64_path = '../Data/ts64_portfolio/'
-tree_grid_search_path = '../Data/TreeGridSearch/'
-ts32_grid_search_path = '../Data/TSGridSearch/'
-ts64_grid_search_path = '../Data/TS64GridSearch/'
-factor_path = '../Data/factor/'
-plot_path = '../Data/plot/'
+raw_data_path = '../paper_data/ret_characteristics/'
+data_chunk_path = '../paper_data/data_chunk_files_quantile/'
+tree_portfolio_path = '../paper_data/tree_portfolio_quantile/'
+ts32_path = '../paper_data/ts_portfolio/'
+ts64_path = '../paper_data/ts64_portfolio/'
+tree_grid_search_path = '../paper_data/TreeGridSearch/'
+ts32_grid_search_path = '../paper_data/TSGridSearch/'
+ts64_grid_search_path = '../paper_data/TS64GridSearch/'
+factor_path = '../paper_data/factor/'
+plot_path = '../paper_data/plot/'
 dir.create(data_chunk_path, showWarnings = FALSE)
 dir.create(tree_portfolio_path)
 dir.create(ts32_path)
@@ -48,7 +48,7 @@ dir.create(tree_grid_search_path)
 dir.create(ts32_grid_search_path)
 dir.create(ts64_grid_search_path)
 dir.create(plot_path)
-OrderPath = '../../Data/Summary/SR.csv'
+OrderPath = '../../paper_data/Summary/SR.csv'
 
 #####################################################################
 ################  Portfolio Generation from Raw Data ################
@@ -151,7 +151,7 @@ combinetrees(feats_list, feat1, tree_depth, factor_path, tree_portfolio_path)
 # in a single csv file for plotting
 source('4_Plots/Figure6a_7_8_SR_Plot_XSF.R')
 # SR_Plot_XSF(SR_Summary_File, plot_path)
-# SR_Plot_XSF('../../Data/SRSummary/SR.csv', '../../Data/plot/')
+# SR_Plot_XSF('../../paper_data/SRSummary/SR.csv', '../../paper_data/plot/')
 
 # This part requires running all 36 combinations and collect the SDF Alpha's t-test results into a single file
 source('4_Plots/Figure6b_C2ab_C4_C5_SDF_AlphaT.R')
@@ -161,9 +161,9 @@ dir.create(paste(plot_path,'/SDF_Alpha/',sep=''))
 
 # This part requires running all 36 combinations and collect the XSR2 results into a single csv file for plotting
 source('4_Plots/Figure6c_C2c_XSR2_Plot.R')
-R2TreePath = '../../Data/Summary/XSR2CombinedTree.csv'
-R2TSPath = '../../Data/Summary/XSR2CombinedTS.csv'
-R2TS64Path = '../../Data/Summary/XSR2CombinedTS64.csv'
+R2TreePath = '../../paper_data/Summary/XSR2CombinedTree.csv'
+R2TSPath = '../../paper_data/Summary/XSR2CombinedTS.csv'
+R2TS64Path = '../../paper_data/Summary/XSR2CombinedTS64.csv'
 # XSR2_plot(R2TreePath, R2TSPath, R2TS64Path, OrderPath)
 # XSR2_plot(R2TreePath, R2TSPath, R2TS64Path, OrderPath)
 
