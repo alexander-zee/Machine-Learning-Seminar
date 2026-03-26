@@ -16,22 +16,103 @@ The objective is to evaluate whether these modifications improve out-of-sample S
 ```
 project/
 │
-├── data/
-│   ├── raw/              # original datasets (never modified)
-│   └── processed/        # cleaned and aligned data
+├── main.py orchestrates the full pipeline
+├── README.md this file
+├── requirements.txt package dependencies
+├── .gitignore git ignore rules
+├── LICENSE project license
 │
-├── src/
-│   ├── data/             # data loading & preprocessing
-│   ├── sdf/              # SDF estimation (static, rolling, kernel)
-│   ├── clustering/       # clustering-based portfolio construction
-│   └── evaluation/       # performance metrics & comparison
+├── 1_Portfolio_Creation/
+│ │
+│ ├── Tree_Portfolio_Creation/
+│ │ ├── step1_prepare_data.py ORIGINAL reads raw CRSP/Compustat,
+│ │ │ converts characteristics to
+│ │ │ cross-sectional quantile ranks,
+│ │ │ writes one CSV per year
+│ │ │
+│ │ ├── step2_tree_portfolios.py ORIGINAL for each of the 3^depth feature
+│ │ │ orderings, recursively splits
+│ │ │ stocks by median of one
+│ │ │ characteristic at each node,
+│ │ │ computes value-weighted returns
+│ │ │ for all intermediate nodes
+│ │ │
+│ │ ├── step2_cluster_portfolios.py OURS replaces median splits with
+│ │ │ Ward agglomerative clustering
+│ │ │ over all characteristics
+│ │ │ simultaneously. Produces same
+│ │ │ output format as step2_tree
+│ │ │
+│ │ ├── step3_combine_trees.py ORIGINAL column-binds all tree orderings,
+│ │ │ deduplicates portfolios with
+│ │ │ identical return histories,
+│ │ │ subtracts risk-free rate
+│ │ │
+│ │ ├── step4_filter_portfolios.py ORIGINAL removes pure single-sort
+│ │ │ portfolios (collinear with
+│ │ │ standard decile sorts)
+│ │ │
+│ │ └── tree_portfolio_helper.py ORIGINAL recursive split logic and
+│ │ value-weighted return computation
+│ │ for one year of data
+│ │
+│ ├── Traditional_Portfolios/ (ORIGINAL)
+│ │ ├── decile_portfolios.py single-sorted decile portfolios per characteristic
+│ │ ├── double_sort_portfolios.py 4x4 double-sorted portfolios for all characteristic pairs
+│ │ ├── triplesort32_portfolios.py 2x4x4 triple‑sorted portfolios (32 total)
+│ │ └── triplesort64_portfolios.py 4x4x4 triple‑sorted portfolios (64 total)
+│ │
+│ └── (other benchmarks) (optional)
 │
-├── notebooks/            # exploratory analysis
-├── results/              # output (figures, tables)
+├── 2_AP_Pruning/
+│ │
+│ ├── ap_pruning.py ORIGINAL orchestrates the full pruning
+│ │ (refactored) pipeline: applies depth-based
+│ │ adjustment weights, runs CV,
+│ │ calls LARS, saves results.
+│ │ Refactored vs R to accept
+│ │ estimate_moments as argument
+│ │
+│ ├── lars_solver.py ORIGINAL thin wrapper around sklearn's
+│ │ lars_path with ridge augmentation
+│ │ (replicates R's lars package)
+│ │
+│ ├── moments_static.py ORIGINAL equal-weighted sample mean and
+│ │ (extracted) covariance — the paper's baseline.
+│ │ Logic extracted from R's
+│ │ lasso_valid_par_full.R
+│ │
+│ ├── moments_rolling.py ORIGINAL rolling 20-year window moments —
+│ │ (extracted) the paper's time-varying benchmark.
+│ │ Made explicit here for clean
+│ │ comparison
+│ │
+│ └── moments_kernel.py OURS kernel-weighted mean and covariance
+│ conditioned on current market state
+│ (VIX, realized variance, term spread).
+│ Implements equations (1)-(2) from
+│ our proposal / Kim & Oh (2025)
 │
-├── main.py               # entry point
-├── requirements.txt
-└── README.md
+├── 3_Metrics_Collection/
+│ │
+│ ├── pick_best_lambda.py ORIGINAL reads all CV result files, finds
+│ │ (lambda0, lambda2) maximizing
+│ │ validation Sharpe, extracts
+│ │ selected portfolio weights
+│ │
+│ ├── factor_regression.py ORIGINAL constructs SDF as weighted
+│ │ portfolio combination, runs
+│ │ time-series OLS against FF3,
+│ │ FF5, XSF, FF11 factor sets
+│ │
+│ └── sharpe.py ORIGINAL computes Sharpe ratio curve
+│ vs number of portfolios (SR-N)
+│
+├── 4_Plots/ (currently empty; will contain visualizations)
+│
+├── data/ our own processed data (outputs)
+├── paper_data/ original data from the paper (inputs) and results
+
 ```
 
 ---
