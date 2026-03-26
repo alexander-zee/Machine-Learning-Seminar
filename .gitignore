@@ -34,4 +34,7 @@ Thumbs.db
 .Renviron
 .Rprofile
 
-.csv
+# Ignore data directories (if you want to keep them locally but not in Git)
+data/
+paper_data/
+*.csv
