@@ -169,14 +169,20 @@ pip install -r requirements.txt
 
 ---
 
-## Usage
+## How to Run the Pipeline (Step-by-Step)
 
-Run the main pipeline:
+Step 1: Data Preparation
+Purpose: Converts raw dollars/ratios into "Quantile Ranks" (0 to 1). This ensures that "Size" and "Value" are on the same scale so the ML models don't get confused.
 
-```
-python main.py
-```
+Action: Run python main.py
 
+Output: A file named panel.parquet in the data/prepared/ folder.
+
+Success Indicator: You see "Saved to ... panel.parquet" with ~3.38 million rows.
+
+Step 2: Portfolio extension
+
+(to be developed by 27-3-2026)
 ---
 
 ## Workflow
