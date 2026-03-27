@@ -8,7 +8,7 @@ OUTPUT_PATH = Path('data/prepared/panel.parquet')
 COLUMN_MAP = {
     'PERMNO':      'permno',
     'MthCalDt':    'date',
-    'MthRet':      'ret',
+    'ExRet':      'ret',
     'LME':         'LME',
     'BEME':        'BEME',
     'OP':          'OP',
