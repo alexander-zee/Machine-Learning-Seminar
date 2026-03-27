@@ -11,6 +11,28 @@ The objective is to evaluate whether these modifications improve out-of-sample S
 
 ---
 
+---
+
+## How to Run the Pipeline (Step-by-Step)
+
+-download the zip file and extract it to any location.
+
+-Go to: C:\Users\(location)\Machine-Learning-Seminar-main \Machine-Learning-Seminar-main\part_1_portfolio_creation\tree_portfolio_creation
+
+-Open step1_prepare_data.py and edit:
+
+"
+RAW_PATH    = Path(r'C:\Users\(stored location)\FINALdataset.csv')
+OUTPUT_PATH = Path(r'data/prepared/panel.parquet')
+"
+
+to ur own locally stored FINALdataset.csv
+
+-run the main.py (in the root folder)
+---
+
+
+
 ## Project Structure
 
 ```
@@ -166,24 +188,6 @@ Install dependencies:
 ```
 pip install -r requirements.txt
 ```
-
----
-
-## How to Run the Pipeline (Step-by-Step)
-
-Step 1: Data Preparation
-Purpose: Converts raw dollars/ratios into "Quantile Ranks" (0 to 1). This ensures that "Size" and "Value" are on the same scale so the ML models don't get confused.
-
-Action: Run python main.py
-
-Output: A file named panel.parquet in the data/prepared/ folder.
-
-Success Indicator: You see "Saved to ... panel.parquet" with ~3.38 million rows.
-
-Step 2: Portfolio extension
-
-(to be developed by 27-3-2026)
----
 
 ## Workflow
 
