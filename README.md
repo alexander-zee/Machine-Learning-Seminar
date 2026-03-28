@@ -29,6 +29,10 @@ OUTPUT_PATH = Path(r'data/prepared/panel.parquet')
 to ur own locally stored FINALdataset.csv
 
 -run the main.py (in the root folder)
+
+- python part_1_portfolio_creation/tree_portfolio_creation/step2_cluster_portfolios.py
+
+- open data/portfolios/clusters/cluster_returns.csv
 ---
 
 
