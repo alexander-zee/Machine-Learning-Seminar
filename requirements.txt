@@ -4,3 +4,8 @@ numpy
 matplotlib 
 seaborn
 pyarrow
+pytest
+scikit-learn
+scipy
+tqdm
+product
