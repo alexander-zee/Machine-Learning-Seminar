@@ -49,6 +49,12 @@ def convert_quantile(series):
     return result
 
 def prepare_data():
+    if not RAW_PATH.is_file():
+        raise FileNotFoundError(
+            f"Raw panel CSV not found:\n  {RAW_PATH}\n\n"
+            "Fix: copy your FINALdataset.csv to that path (create data/raw/ if needed), "
+            "or edit RAW_PATH in step1_prepare_data.py to point to your file."
+        )
     print("Loading raw data...")
     df = pd.read_csv(RAW_PATH)
     df = df.rename(columns=COLUMN_MAP)

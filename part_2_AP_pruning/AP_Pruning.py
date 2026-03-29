@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from lambda_grids import get_lambda_grids
 from lasso_valid_par_full import lasso_valid_full
 
 
@@ -33,10 +34,10 @@ def AP_Pruning(
     lambda2=None,
     weights_dict_df=None,
 ):
-    if lambda0 is None:
-        lambda0 = [0, 0.1, 0.2]
-    if lambda2 is None:
-        lambda2 = [0.01, 0.05, 0.1]
+    if lambda0 is None or lambda2 is None:
+        g0, g2 = get_lambda_grids()
+        lambda0 = g0 if lambda0 is None else lambda0
+        lambda2 = g2 if lambda2 is None else lambda2
 
     i1 = _resolve_feat_idx(feats_list, feat1)
     i2 = _resolve_feat_idx(feats_list, feat2)
@@ -94,10 +95,10 @@ def AP_Pruning_clusters(
     LASSO / AP-style pruning on Ward cluster portfolio returns (no tree depth weights).
     Expects CSV with dates in the first column (or index) and numeric cluster return columns.
     """
-    if lambda0 is None:
-        lambda0 = [0, 0.1, 0.2]
-    if lambda2 is None:
-        lambda2 = [0.01, 0.05, 0.1]
+    if lambda0 is None or lambda2 is None:
+        g0, g2 = get_lambda_grids()
+        lambda0 = g0 if lambda0 is None else lambda0
+        lambda2 = g2 if lambda2 is None else lambda2
 
     path = Path(input_csv)
     ports = pd.read_csv(path, index_col=0)

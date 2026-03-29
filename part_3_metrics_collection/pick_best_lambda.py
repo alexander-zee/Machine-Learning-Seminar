@@ -8,6 +8,7 @@ Matches part_3_metrics_collection/Pick_Best_Lambda.R logic:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,37 @@ FEATS_LIST = [
     "AC",
     "LTurnover",
 ]
+
+
+def load_lambda_grid_meta(ap_subdir: Path) -> tuple[np.ndarray, np.ndarray] | None:
+    """Read lambda0/lambda2 vectors written by Part 2 (lasso_valid_full)."""
+    p = ap_subdir / "lambda_grid_meta.json"
+    if not p.is_file():
+        return None
+    d = json.loads(p.read_text(encoding="utf-8"))
+    return np.asarray(d["lambda0"], dtype=float), np.asarray(d["lambda2"], dtype=float)
+
+
+def _feasible_common_port_n(
+    sub: Path, n_lambda0: int, n_lambda2: int, port_n_target: int
+) -> int:
+    """
+    Largest n <= port_n_target such that every results_full_l0_*_l2_*.csv contains a row
+    with portsN == n. Needed when LARS never reaches the requested count (e.g. Ward + tiny λ₂).
+    """
+    caps: list[int] = []
+    for i in range(1, n_lambda0 + 1):
+        for j in range(1, n_lambda2 + 1):
+            p = sub / f"results_full_l0_{i}_l2_{j}.csv"
+            df = pd.read_csv(p, usecols=["portsN"])
+            le = df.loc[df["portsN"] <= port_n_target, "portsN"]
+            if le.empty:
+                raise ValueError(
+                    f"No LASSO row with portsN<={port_n_target} in {p} "
+                    f"(max in file={int(df['portsN'].max())})."
+                )
+            caps.append(int(le.max()))
+    return min(caps)
 
 
 def _triplet_subdir(feat1: str | int, feat2: str | int) -> str:
@@ -74,6 +106,27 @@ def pick_best_lambda(
     if not sub.is_dir():
         raise FileNotFoundError(f"Missing AP-pruning folder: {sub}")
 
+    meta = load_lambda_grid_meta(sub)
+    if meta is not None:
+        lambda0_vals, lambda2_vals = meta
+        n_lambda0, n_lambda2 = int(lambda0_vals.size), int(lambda2_vals.size)
+    else:
+        if n_lambda0 != 3 or n_lambda2 != 3:
+            raise ValueError(
+                f"{sub}: missing lambda_grid_meta.json; cannot infer grid size "
+                f"(expected 3x3 legacy or re-run Part 2). Got n_lambda0={n_lambda0}, n_lambda2={n_lambda2}."
+            )
+        lambda0_vals = np.array([0.0, 0.1, 0.2], dtype=float)
+        lambda2_vals = np.array([0.01, 0.05, 0.1], dtype=float)
+
+    port_n_use = _feasible_common_port_n(sub, n_lambda0, n_lambda2, port_n)
+    if port_n_use < port_n:
+        print(
+            f"pick_best_lambda [{sub_dir}]: requested portsN={port_n}, but the LARS path "
+            f"does not reach that count in every lambda cell; using portsN={port_n_use} "
+            f"for the Sharpe grid and lambda* selection."
+        )
+
     train_sr = np.zeros((n_lambda0, n_lambda2))
     valid_sr = np.zeros((n_lambda0, n_lambda2))
     test_sr = np.zeros((n_lambda0, n_lambda2))
@@ -82,9 +135,12 @@ def pick_best_lambda(
         for j in range(1, n_lambda2 + 1):
             full_path = sub / f"results_full_l0_{i}_l2_{j}.csv"
             full_data = pd.read_csv(full_path)
-            row_f = full_data.loc[full_data["portsN"] == port_n]
+            row_f = full_data.loc[full_data["portsN"] == port_n_use]
             if row_f.empty:
-                raise ValueError(f"No row with portsN=={port_n} in {full_path}")
+                raise ValueError(
+                    f"No row with portsN=={port_n_use} in {full_path} "
+                    f"(feasible scan should have prevented this)."
+                )
             row_f = row_f.iloc[0]
             train_sr[i - 1, j - 1] = row_f["train_SR"]
             test_sr[i - 1, j - 1] = row_f["test_SR"]
@@ -94,13 +150,13 @@ def pick_best_lambda(
                 for fold in (1, 2, 3):
                     cv_path = sub / f"results_cv_{fold}_l0_{i}_l2_{j}.csv"
                     cv_data = pd.read_csv(cv_path)
-                    row_c = cv_data.loc[cv_data["portsN"] == port_n].iloc[0]
+                    row_c = cv_data.loc[cv_data["portsN"] == port_n_use].iloc[0]
                     vsum += row_c["valid_SR"]
                 valid_sr[i - 1, j - 1] = vsum / 3.0
             else:
                 cv_path = sub / f"results_cv_3_l0_{i}_l2_{j}.csv"
                 cv_data = pd.read_csv(cv_path)
-                row_c = cv_data.loc[cv_data["portsN"] == port_n].iloc[0]
+                row_c = cv_data.loc[cv_data["portsN"] == port_n_use].iloc[0]
                 valid_sr[i - 1, j - 1] = row_c["valid_SR"]
 
     flat = np.argmax(valid_sr)
@@ -109,7 +165,7 @@ def pick_best_lambda(
 
     best_full = sub / f"results_full_l0_{i_star}_l2_{j_star}.csv"
     full_data = pd.read_csv(best_full)
-    row_best = full_data.loc[full_data["portsN"] == port_n].iloc[0]
+    row_best = full_data.loc[full_data["portsN"] == port_n_use].iloc[0]
     meta = {"train_SR", "test_SR", "valid_SR", "portsN"}
     wcols = [c for c in full_data.columns if c not in meta]
     w = row_best[wcols].astype(float)
@@ -128,16 +184,17 @@ def pick_best_lambda(
     selected_ports = ports[selected_names]
 
     if write_tables:
-        np.savetxt(sub / f"train_SR_{port_n}.csv", train_sr, delimiter=",")
-        np.savetxt(sub / f"valid_SR_{port_n}.csv", valid_sr, delimiter=",")
-        np.savetxt(sub / f"test_SR_{port_n}.csv", test_sr, delimiter=",")
-        selected_ports.to_csv(sub / f"Selected_Ports_{port_n}.csv", index=True)
+        np.savetxt(sub / f"train_SR_{port_n_use}.csv", train_sr, delimiter=",")
+        np.savetxt(sub / f"valid_SR_{port_n_use}.csv", valid_sr, delimiter=",")
+        np.savetxt(sub / f"test_SR_{port_n_use}.csv", test_sr, delimiter=",")
+        selected_ports.to_csv(sub / f"Selected_Ports_{port_n_use}.csv", index=True)
         pd.DataFrame({"weight": weights_values}).to_csv(
-            sub / f"Selected_Ports_Weights_{port_n}.csv", index=False
+            sub / f"Selected_Ports_Weights_{port_n_use}.csv", index=False
         )
 
-    return {
+    out = {
         "subdir": sub_dir,
+        "port_n": int(port_n_use),
         "best_i_lambda0": i_star,
         "best_j_lambda2": j_star,
         "train_SR": float(train_sr[bi, bj]),
@@ -145,7 +202,12 @@ def pick_best_lambda(
         "test_SR": float(test_sr[bi, bj]),
         "selected_columns": selected_names,
         "weights": weights_values.tolist(),
+        "lambda0": lambda0_vals.tolist(),
+        "lambda2": lambda2_vals.tolist(),
     }
+    if port_n_use < port_n:
+        out["port_n_requested"] = int(port_n)
+    return out
 
 
 def run_default_picks(port_n: int = 10, ap_root: Path | None = None) -> list[dict]:
@@ -186,6 +248,65 @@ def run_default_picks(port_n: int = 10, ap_root: Path | None = None) -> list[dic
     return out
 
 
+def run_full_paper_picks(
+    ap_root: Path | None = None,
+    ward_port_n: int = 10,
+    tree_port_ns: tuple[int, ...] = (10, 40),
+    feat1_tree: str = "OP",
+    feat2_tree: str = "Investment",
+) -> list[dict]:
+    """
+    All picks typically reported in the paper-style bundle: Ward (N<=10), AP-trees for
+    several N (e.g. 10 and 40). Skips tree N if no row exists in LASSO output.
+    """
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    out: list[dict] = []
+
+    ward = ap / "Ward_clusters_10"
+    if ward.is_dir() and CLUSTER_RETURNS.is_file():
+        print(f"pick_best_lambda: Ward_clusters_10, port_n={ward_port_n}")
+        out.append(
+            pick_best_lambda(
+                ap,
+                "Ward_clusters_10",
+                ward_port_n,
+                CLUSTER_RETURNS,
+                returns_index_col=0,
+                full_cv=False,
+            )
+        )
+
+    sub_tree = _triplet_subdir(feat1_tree, feat2_tree)
+    tree_dir = ap / sub_tree
+    tree_csv = TREE_PORT_ROOT / sub_tree / "level_all_excess_combined_filtered.csv"
+    if not (tree_dir.is_dir() and tree_csv.is_file()):
+        return out
+
+    for pn in tree_port_ns:
+        print(f"pick_best_lambda: {sub_tree}, port_n={pn}")
+        try:
+            out.append(
+                pick_best_lambda(
+                    ap,
+                    sub_tree,
+                    pn,
+                    tree_csv,
+                    returns_index_col=None,
+                    full_cv=False,
+                )
+            )
+        except (ValueError, KeyError) as e:
+            print(f"  skipped port_n={pn}: {e}")
+
+    return out
+
+
+def _pick_row_label(r: dict) -> str:
+    sub = str(r.get("subdir", "?"))
+    pn = r.get("port_n")
+    return f"{sub} (N={pn})" if pn is not None else sub
+
+
 def print_ap_comparison(rows: list[dict]) -> None:
     """Print a compact table; use test_SR to rank models (valid was used to tune λ*)."""
     print("\n" + "=" * 66)
@@ -197,7 +318,7 @@ def print_ap_comparison(rows: list[dict]) -> None:
         return
     if len(rows) == 1:
         r0 = rows[0]
-        sub = str(r0.get("subdir", "?"))
+        sub = _pick_row_label(r0)
         print(f"Only one model: {sub}")
         print(
             f"  train_SR={r0['train_SR']:.6f}  valid_SR={r0['valid_SR']:.6f}  "
@@ -210,17 +331,21 @@ def print_ap_comparison(rows: list[dict]) -> None:
             )
         return
 
-    w = max(len(str(r["subdir"])) for r in rows)
+    labels = [_pick_row_label(r) for r in rows]
+    w = max(len(s) for s in labels)
     line = f"{'model':<{w}}  {'train_SR':>10}  {'valid_SR':>10}  {'test_SR':>10}"
     print(line)
     print("-" * len(line))
-    for r in sorted(rows, key=lambda x: -float(x["test_SR"])):
+    order = sorted(range(len(rows)), key=lambda i: -float(rows[i]["test_SR"]))
+    for i in order:
+        r = rows[i]
+        lab = labels[i]
         print(
-            f"{str(r['subdir']):<{w}}  {float(r['train_SR']):10.4f}  "
+            f"{lab:<{w}}  {float(r['train_SR']):10.4f}  "
             f"{float(r['valid_SR']):10.4f}  {float(r['test_SR']):10.4f}"
         )
     best = max(rows, key=lambda x: float(x["test_SR"]))
-    print(f"\nHighest test_SR → {best['subdir']} ({float(best['test_SR']):.6f})")
+    print(f"\nHighest test_SR -> {_pick_row_label(best)} ({float(best['test_SR']):.6f})")
 
 
 if __name__ == "__main__":

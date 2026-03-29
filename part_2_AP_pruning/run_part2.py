@@ -21,6 +21,7 @@ if str(_P2) not in sys.path:
     sys.path.insert(0, str(_P2))
 
 from AP_Pruning import AP_Pruning, AP_Pruning_clusters  # noqa: E402
+from lambda_grids import ap_lambda_grid_mode, get_lambda_grids  # noqa: E402
 
 REPO_ROOT = _P2.parent
 
@@ -70,6 +71,11 @@ def run_part2(
 ) -> None:
     AP_OUT.mkdir(parents=True, exist_ok=True)
     out_str = str(AP_OUT)
+    g0, g2 = get_lambda_grids()
+    print(
+        f"AP λ grid: mode={ap_lambda_grid_mode()} "
+        f"(|λ0|={len(g0)}, |λ2|={len(g2)}; set AP_PRUNE_LAMBDA_GRID=fast|paper|paper_full)"
+    )
 
     if run_clusters:
         if not CLUSTER_RETURNS.is_file():

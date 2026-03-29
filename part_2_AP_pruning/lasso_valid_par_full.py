@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 import pandas as pd
@@ -8,6 +9,11 @@ def lasso_valid_full(ports, lambda0, lambda2, main_dir, sub_dir, adj_w,
                      RunParallel=False, ParallelN=10, weights_dict_df=None):
     
     os.makedirs(os.path.join(main_dir, sub_dir), exist_ok=True)
+    sub_path = os.path.join(main_dir, sub_dir)
+    la0 = [float(x) for x in np.asarray(lambda0).ravel()]
+    la2 = [float(x) for x in np.asarray(lambda2).ravel()]
+    with open(os.path.join(sub_path, "lambda_grid_meta.json"), "w", encoding="utf-8") as f:
+        json.dump({"lambda0": la0, "lambda2": la2}, f, indent=2)
     
     # Extract weights or default to equal weighting
     if weights_dict_df is not None:
