@@ -15,14 +15,13 @@ The objective is to evaluate whether these modifications improve out-of-sample S
 
 ## Quickstart (Beginner Friendly)
 
-Use PowerShell (or VS Code terminal) from the repository root.
+Use PowerShell (or VS Code terminal) from the **repository root**.
 
 ### 1) Clone and install
 
 ```powershell
-cd "$HOME\Downloads"
 git clone https://github.com/alexander-zee/Machine-Learning-Seminar.git
-cd "Machine-Learning-Seminar"
+cd Machine-Learning-Seminar
 git checkout python-pipeline-mice-ward-extension
 
 python -m venv .venv
@@ -30,35 +29,56 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2) Upload required input CSV files
+(There is also a branch named `Python-pipeline-+-MICE-+-Ward-extension` with the same content; prefer `python-pipeline-mice-ward-extension` if GitHub’s UI has trouble with `+` in branch names.)
 
-Before running the full pipeline, place these files at the exact paths below:
+### 2) Add required CSV inputs (manual)
 
-- `data/raw/FINALdataset.csv`
-- `data/raw/rf_factor.csv`
-- `data/factor/tradable_factors.csv`
+Place these files at **exact** paths (folders and README stubs are in Git):
 
-The repository includes empty folder placeholders + README files under:
-- `data/raw/`
-- `data/factor/`
+| File | Purpose |
+|------|---------|
+| `data/raw/FINALdataset.csv` | Main stock panel → `prepare_data` |
+| `data/raw/rf_factor.csv` | Monthly risk-free rate → `combine_trees` (percent units) |
+| `data/factor/tradable_factors.csv` | Tradable factors → Part 3 Table 3–style regressions |
 
-Use those as upload locations.
+### 3) Verify inputs before a long run
 
-### 3) Run full pipeline
+```powershell
+python scripts/check_inputs.py
+```
+
+Exit code **0** means all three files are present. If something is missing, the script prints the full path to create and copy into.  
+`run_full_research_pipeline.py` also checks these up front and exits with a short message if inputs are missing (so you do not fail halfway through MICE or trees).
+
+### 4) Run the full pipeline
 
 ```powershell
 python run_full_research_pipeline.py
 ```
 
-### 4) Outputs
+This is slow on first run (especially AP-trees × dense λ grid). See the docstring at the top of `run_full_research_pipeline.py` for a rough time budget.
 
-- Figures: `data/results/figures_seminar/`
-- Tables: `data/results/tables_seminar/`
-- AP pruning outputs: `data/results/ap_pruning/`
+### 5) Where outputs appear (after a successful run)
+
+| Stage | Location |
+|-------|----------|
+| Prepared panels | `data/prepared/` (`.parquet`, gitignored) |
+| Ward clusters | `data/portfolios/clusters/cluster_returns.csv` (gitignored) |
+| Tree + filtered returns | `data/results/tree_portfolios/...` (gitignored CSVs) |
+| LASSO grids | `data/results/ap_pruning/<model>/` (gitignored CSVs) |
+| Figures / tables | `data/results/figures_seminar/`, `data/results/tables_seminar/` |
+
+Each of those folders has a **README.md** in Git explaining what gets generated.
+
+### 6) Part 3 only (if Part 2 already finished)
+
+```powershell
+python -c "from part_3_metrics_collection.paper_style_outputs import run_complete_paper_outputs; run_complete_paper_outputs()"
+```
 
 ### Optional speed-up
 
-If you already created `data/prepared/panel_benchmark.parquet` before:
+If you already have `data/prepared/panel_benchmark.parquet` and do not need to re-read the raw CSV:
 
 ```powershell
 $env:SKIP_PREPARE_DATA='1'

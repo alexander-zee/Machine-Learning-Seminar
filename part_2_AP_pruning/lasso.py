@@ -1,6 +1,11 @@
 import numpy as np
 from sklearn.linear_model import lars_path
 
+# sklearn can leave tiny numerical crumbs instead of exact zeros; R LARS often has exact zeros.
+# Use a tolerance so sparsity counts match R-style "active" sets more closely.
+_COEF_ACTIVE_TOL = 1e-10
+
+
 def lasso(X, y, lambda2, steps=100, kmin=5, kmax=50):
     # Get dimensions of X
     # R: n = nrow(X); p = ncol(X)
@@ -17,7 +22,7 @@ def lasso(X, y, lambda2, steps=100, kmin=5, kmax=50):
     
     # Run the LARS algorithm
     # R: lars(XX, yy, type="lasso", normalize = FALSE, intercept = FALSE)
-    # sklearn default max_iter=500 can truncate when p is large (~1500 tree nodes); need ≥ p steps.
+    # `steps` is a floor; effective max_iter is max(steps, p+1, min(n+p, 5000)) so large p is covered.
     alphas, active, coefs = lars_path(
         XX, yy, method="lasso", max_iter=int(max(steps, p + 1, min(n + p, 5000)))
     )
@@ -26,9 +31,9 @@ def lasso(X, y, lambda2, steps=100, kmin=5, kmax=50):
     # We transpose it to (steps, features) to match R's output format perfectly.
     beta = coefs.T
     
-    # Count non-zero elements in each row
+    # Count active coefficients per path step (tolerance for float noise vs R exact zeros).
     # R: K = apply(beta, 1, function(x){return(sum(x != 0))})
-    K = np.sum(beta != 0, axis=1)
+    K = np.sum(np.abs(beta) > _COEF_ACTIVE_TOL, axis=1)
     
     # Filter for sparsity between kmin and kmax
     # R: subset = K >= kmin & K <= kmax
