@@ -13,7 +13,7 @@ The objective is to evaluate whether these modifications improve out-of-sample S
 
 ---
 
-## Quickstart (Beginner Friendly)
+## How to Run
 
 Use PowerShell (or VS Code terminal) from the **repository root**.
 
