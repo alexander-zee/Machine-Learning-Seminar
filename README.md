@@ -13,26 +13,58 @@ The objective is to evaluate whether these modifications improve out-of-sample S
 
 ---
 
-## How to Run the Pipeline (Step-by-Step)
+## Quickstart (Beginner Friendly)
 
--download the zip file and extract it to any location.
+Use PowerShell (or VS Code terminal) from the repository root.
 
--Go to: C:\Users\(location)\Machine-Learning-Seminar-main \Machine-Learning-Seminar-main\part_1_portfolio_creation\tree_portfolio_creation
+### 1) Clone and install
 
--Open step1_prepare_data.py and edit:
+```powershell
+cd "$HOME\Downloads"
+git clone https://github.com/alexander-zee/Machine-Learning-Seminar.git
+cd "Machine-Learning-Seminar"
+git checkout python-pipeline-mice-ward-extension
 
-"
-RAW_PATH    = Path(r'C:\Users\(stored location)\FINALdataset.csv')
-OUTPUT_PATH = Path(r'data/prepared/panel.parquet')
-"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-to ur own locally stored FINALdataset.csv
+### 2) Upload required input CSV files
 
--run the main.py (in the root folder)
+Before running the full pipeline, place these files at the exact paths below:
 
-- python part_1_portfolio_creation/tree_portfolio_creation/step2_cluster_portfolios.py
+- `data/raw/FINALdataset.csv`
+- `data/raw/rf_factor.csv`
+- `data/factor/tradable_factors.csv`
 
-- open data/portfolios/clusters/cluster_returns.csv
+The repository includes empty folder placeholders + README files under:
+- `data/raw/`
+- `data/factor/`
+
+Use those as upload locations.
+
+### 3) Run full pipeline
+
+```powershell
+python run_full_research_pipeline.py
+```
+
+### 4) Outputs
+
+- Figures: `data/results/figures_seminar/`
+- Tables: `data/results/tables_seminar/`
+- AP pruning outputs: `data/results/ap_pruning/`
+
+### Optional speed-up
+
+If you already created `data/prepared/panel_benchmark.parquet` before:
+
+```powershell
+$env:SKIP_PREPARE_DATA='1'
+python run_full_research_pipeline.py
+```
+
 ---
 
 

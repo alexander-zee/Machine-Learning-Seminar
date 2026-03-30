@@ -34,7 +34,32 @@ Thumbs.db
 .Renviron
 .Rprofile
 
-# Ignore data directories (if you want to keep them locally but not in Git)
-data/
+# Data policy:
+# - keep folder scaffold + README placeholders in Git for new users
+# - keep large/generated data files out of Git
 paper_data/
 *.csv
+*.parquet
+*.feather
+*.pkl
+*.pickle
+
+# Ignore everything under data by default...
+data/**
+# ...but keep folder scaffold and instructions
+!data/
+!data/.gitkeep
+!data/raw/
+!data/raw/.gitkeep
+!data/raw/README.md
+!data/factor/
+!data/factor/.gitkeep
+!data/factor/README.md
+!data/prepared/
+!data/prepared/.gitkeep
+!data/results/
+!data/results/.gitkeep
+!data/portfolios/
+!data/portfolios/.gitkeep
+!data/portfolios/clusters/
+!data/portfolios/clusters/.gitkeep

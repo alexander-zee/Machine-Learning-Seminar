@@ -64,6 +64,48 @@ def sync_panel_for_trees() -> None:
         print("Synced data/prepared/panel.parquet <- panel_benchmark.parquet (for tree build).")
 
 
+def _preflight_required_inputs(skip_prep: bool, raw_path: Path, panel_benchmark_path: Path) -> None:
+    """
+    Check required user-provided files up front, so new users do not fail halfway.
+    """
+    required: list[tuple[Path, str]] = []
+    if not (skip_prep and panel_benchmark_path.is_file()):
+        required.append(
+            (
+                raw_path,
+                "Main raw stock panel for Step 1 prepare_data.",
+            )
+        )
+    required.extend(
+        [
+            (
+                REPO / "data" / "raw" / "rf_factor.csv",
+                "Monthly risk-free rate for Step 2c combine_trees.",
+            ),
+            (
+                REPO / "data" / "factor" / "tradable_factors.csv",
+                "Tradable factors for Table3-style factor regressions in Part 3.",
+            ),
+        ]
+    )
+
+    missing = [(p, note) for p, note in required if not p.is_file()]
+    if not missing:
+        return
+
+    print("\nMissing required input files. Please add these files and rerun:\n")
+    for p, note in missing:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        print(f"  - {p}")
+        print(f"    {note}")
+    print(
+        "\nTip: repository includes folder placeholders under data/raw and data/factor.\n"
+        "If Step 1 was already run previously, you can skip raw prepare_data with:\n"
+        "  $env:SKIP_PREPARE_DATA='1'; python run_full_research_pipeline.py\n"
+    )
+    sys.exit(1)
+
+
 def main() -> None:
     _chdir_repo()
     print("=" * 72)
@@ -90,6 +132,7 @@ def main() -> None:
     )
 
     skip_prep = os.environ.get("SKIP_PREPARE_DATA", "").lower() in ("1", "true", "yes")
+    _preflight_required_inputs(skip_prep, RAW_PATH, PANEL_BENCHMARK_PATH)
     print("\n--- Step 1: prepare_data (benchmark panel) ---")
     if skip_prep and PANEL_BENCHMARK_PATH.is_file():
         print(f"SKIP_PREPARE_DATA=1 and found {PANEL_BENCHMARK_PATH.name} — skipping prepare_data.")
