@@ -48,7 +48,23 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIGURES_DIR = REPO_ROOT / "data" / "results" / "figures_seminar"
 TABLES_DIR = REPO_ROOT / "data" / "results" / "tables_seminar"
-TRADABLE_FACTORS = REPO_ROOT / "paper_data" / "factor" / "tradable_factors.csv"
+
+
+def _resolve_tradable_factors_path() -> Path:
+    """
+    Prefer user-managed input under data/, with paper_data/ as backward-compatible fallback.
+    """
+    candidates = [
+        REPO_ROOT / "data" / "factor" / "tradable_factors.csv",
+        REPO_ROOT / "paper_data" / "factor" / "tradable_factors.csv",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return candidates[0]
+
+
+TRADABLE_FACTORS = _resolve_tradable_factors_path()
 
 # Matches AP_Pruning.py defaults
 LAMBDA0_DEFAULT = np.array([0.0, 0.1, 0.2], dtype=float)
