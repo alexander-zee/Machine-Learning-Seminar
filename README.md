@@ -33,13 +33,24 @@ pip install -r requirements.txt
 
 ### 2) Add required CSV inputs (manual)
 
-Place these files at **exact** paths (folders and README stubs are in Git):
+Create the folders if needed, then **copy each file into the folder shown** (names must match exactly).
 
-| File | Purpose |
-|------|---------|
-| `data/raw/FINALdataset.csv` | Main stock panel → `prepare_data` |
-| `data/raw/rf_factor.csv` | Monthly risk-free rate → `combine_trees` (percent units) |
-| `data/factor/tradable_factors.csv` | Tradable factors → Part 3 Table 3–style regressions |
+**Folder `data/raw/`** (two files in this folder):
+
+- `FINALdataset.csv` — main stock panel for `prepare_data`
+- `rf_factor.csv` — monthly risk-free rate for `combine_trees` (values in **percent**, e.g. `0.12` = 0.12% per month)
+
+**Folder `data/factor/`** (one file in this folder):
+
+- `tradable_factors.csv` — tradable factor panel for Part 3 (Table 3–style SDF regressions)
+
+Full paths from the repo root:
+
+```
+data/raw/FINALdataset.csv
+data/raw/rf_factor.csv
+data/factor/tradable_factors.csv
+```
 
 ### 3) Verify inputs before a long run
 
