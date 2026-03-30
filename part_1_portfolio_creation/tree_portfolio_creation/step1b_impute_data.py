@@ -8,8 +8,22 @@ from tqdm import tqdm
 
 # Paden instellen
 SCRIPT_DIR = Path(__file__).resolve().parent
-# Repo root from: part_1_portfolio_creation/tree_portfolio_creation/step1b_impute_data.py
-ROOT_DIR = SCRIPT_DIR.parents[2]
+
+
+def _find_repo_root(start: Path) -> Path:
+    """
+    Robust repo-root detection for runs from VSCode/PowerShell on Windows.
+    Walk up from this file until we find project markers.
+    """
+    for p in [start, *start.parents]:
+        if (p / "requirements.txt").is_file() and (p / "part_1_portfolio_creation").is_dir():
+            return p
+    # Safe fallback for expected layout:
+    # <repo>/part_1_portfolio_creation/tree_portfolio_creation/step1b_impute_data.py
+    return start.parents[2]
+
+
+ROOT_DIR = _find_repo_root(SCRIPT_DIR)
 PREPARED_DIR = ROOT_DIR / 'data' / 'prepared'
 
 PATH_ORIGINAL = PREPARED_DIR / 'FINALdataset.parquet'
