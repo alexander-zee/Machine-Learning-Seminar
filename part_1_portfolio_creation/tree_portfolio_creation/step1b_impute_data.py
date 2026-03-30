@@ -7,8 +7,9 @@ from sklearn.impute import IterativeImputer
 from tqdm import tqdm
 
 # Paden instellen
-SCRIPT_DIR = Path(__file__).parent.absolute()
-ROOT_DIR = SCRIPT_DIR.parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+# Repo root from: part_1_portfolio_creation/tree_portfolio_creation/step1b_impute_data.py
+ROOT_DIR = SCRIPT_DIR.parents[2]
 PREPARED_DIR = ROOT_DIR / 'data' / 'prepared'
 
 PATH_ORIGINAL = PREPARED_DIR / 'FINALdataset.parquet'
@@ -24,8 +25,18 @@ def run_mice_imputation():
     print("=" * 65)
 
     print("Laden van datasets...")
-    df_orig = pd.read_parquet(PATH_ORIGINAL)
     df_yours = pd.read_parquet(PATH_YOUR_DATA)
+    if PATH_ORIGINAL.is_file():
+        df_orig = pd.read_parquet(PATH_ORIGINAL)
+        using_final_template = True
+    else:
+        # New-user fallback: use benchmark panel as template if FINALdataset.parquet is absent.
+        print(
+            f"Info: {PATH_ORIGINAL.name} niet gevonden in data/prepared; "
+            "gebruik panel_benchmark.parquet als template."
+        )
+        df_orig = df_yours.copy()
+        using_final_template = False
 
     # --- KOLOM-NORMALISATIE (FINALdataset) ---
     date_col_orig = next(
@@ -52,7 +63,7 @@ def run_mice_imputation():
     n_dup_o = int(df_orig.duplicated(subset=['permno', 'date']).sum())
     if n_dup_o:
         print(
-            f"WAARSCHUWING: {n_dup_o} dubbele (permno, date) in FINALdataset — "
+            f"WAARSCHUWING: {n_dup_o} dubbele (permno, date) in template-dataset — "
             "rijen in output volgen dit bestand exact."
         )
 
@@ -70,7 +81,8 @@ def run_mice_imputation():
         )
     panel_side = panel_side.drop_duplicates(subset=['permno', 'date'], keep='first')
 
-    print(f"Samenvoegen op basis van FINALdataset-template ({len(df_orig):,} rijen)...")
+    template_name = "FINALdataset-template" if using_final_template else "panel_benchmark-template"
+    print(f"Samenvoegen op basis van {template_name} ({len(df_orig):,} rijen)...")
     df_combined = df_orig[base_cols].merge(
         panel_side,
         on=['permno', 'date'],
@@ -80,7 +92,7 @@ def run_mice_imputation():
 
     if len(df_combined) != len(df_orig):
         raise ValueError(
-            f"Rijenaantal na merge ({len(df_combined):,}) wijkt af van FINALdataset "
+            f"Rijenaantal na merge ({len(df_combined):,}) wijkt af van template "
             f"({len(df_orig):,}). Controleer sleutels en duplicaten."
         )
 
@@ -133,7 +145,7 @@ def run_mice_imputation():
 
     print("-" * 65)
     print(f"SUCCES! Dataset opgeslagen als: {PATH_OUTPUT.name}")
-    print(f"Rijen match FINALdataset: {'JA' if len(df_combined) == len(df_orig) else 'NEE'}")
+    print(f"Rijen match template: {'JA' if len(df_combined) == len(df_orig) else 'NEE'}")
     print(f"Totaal rijen: {len(df_combined):,}")
     print("=" * 65)
 
