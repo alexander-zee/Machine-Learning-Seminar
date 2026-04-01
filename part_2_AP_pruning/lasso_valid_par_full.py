@@ -11,7 +11,7 @@ import os
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from lasso import lasso
+from .lasso import lasso
 
 
 def lasso_valid_full(ports, lambda0, lambda2, main_dir, sub_dir, adj_w,

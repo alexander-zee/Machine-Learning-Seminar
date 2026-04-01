@@ -8,7 +8,7 @@ pre-scales returns, then runs the full (lambda0, lambda2) grid search.
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from lasso_valid_par_full import lasso_valid_full
+from .lasso_valid_par_full import lasso_valid_full
 
 
 def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,

@@ -82,7 +82,7 @@ def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2, port
     for k in range(mink, maxk + 1):
         print(f"  k={k}")
         sr = pick_best_lambda(feat1, feat2, grid_search_path, k, lambda0, lambda2,
-                              port_path, port_file_name, full_cv=False, write_table=False)
+                              port_path, port_file_name, full_cv=False, write_table=True)
         sr_n = sr.reshape(-1, 1) if sr_n is None else np.hstack([sr_n, sr.reshape(-1, 1)])
 
     pd.DataFrame(sr_n, index=['train_SR', 'valid_SR', 'test_SR']).to_csv(
