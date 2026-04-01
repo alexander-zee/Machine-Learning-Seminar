@@ -1,37 +1,30 @@
+"""
+lasso.py — LARS path for LASSO with Ridge-augmented system.
+
+The Ridge penalty (lambda2) is incorporated by augmenting X and y before
+running LARS, which traces the full L1 path in one pass. We return only
+solutions where the number of nonzero coefficients k is in [kmin, kmax].
+"""
+
 import numpy as np
 from sklearn.linear_model import lars_path
 
-def lasso(X, y, lambda2, steps=70, kmin=5, kmax=50):
-    # Get dimensions of X
-    # R: n = nrow(X); p = ncol(X)
-    n, p = X.shape
-    
-    # Pad y with zeros
-    # R: yy = c(y, rep(0, p))
+
+def lasso(X: np.ndarray, y: np.ndarray, lambda2: float, steps: int = 70, kmin: int = 5, kmax: int = 50):
+    """
+    Run LARS on the Ridge-augmented system and return sparse solutions.
+    Input  : X (n,p) design matrix (sigma_tilde), y (n,) response (mu_tilde[:,i]),
+             lambda2 scalar Ridge penalty, kmin/kmax portfolio count bounds.
+    Output : (beta_filtered, K_filtered) — beta (n_solutions, p) weight matrix
+             and K (n_solutions,) vector of corresponding nonzero counts.
+    """
+    p = X.shape[1]
     yy = np.concatenate([y, np.zeros(p)])
-    
-    # Append the diagonal lambda2 penalty matrix to X
-    # R: XX = rbind(X, diag(sqrt(lambda2), p, p))
-    penalty_matrix = np.diag(np.full(p, np.sqrt(lambda2)))
-    XX = np.vstack([X, penalty_matrix])
-    
-    # Run the LARS algorithm
-    # R: lasso_obj = lars(XX, yy, type="lasso", normalize = FALSE, intercept = FALSE)
-    # R: beta = coef(lasso_obj)
-    alphas, active, coefs = lars_path(XX, yy, method='lasso')
-    
-    # scikit-learn returns coefficients as (features, steps). 
-    # We transpose it to (steps, features) to match R's output format perfectly.
-    beta = coefs.T
-    
-    # Count non-zero elements in each row
-    # R: K = apply(beta, 1, function(x){return(sum(x != 0))})
+    XX = np.vstack([X, np.diag(np.full(p, np.sqrt(lambda2)))])
+
+    _, _, coefs = lars_path(XX, yy, method='lasso')
+    beta = coefs.T  # (n_steps, p)
+
     K = np.sum(beta != 0, axis=1)
-    
-    # Filter for sparsity between kmin and kmax
-    # R: subset = K >= kmin & K <= kmax
-    subset_mask = (K >= kmin) & (K <= kmax)
-    
-    # Return the filtered betas and K counts
-    # R: return(list(beta[subset,], K[subset]))
-    return beta[subset_mask, :], K[subset_mask]
+    mask = (K >= kmin) & (K <= kmax)
+    return beta[mask], K[mask]
