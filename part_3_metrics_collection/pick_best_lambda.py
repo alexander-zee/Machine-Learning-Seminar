@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 AP_PRUNE_DEFAULT = REPO_ROOT / "data" / "results" / "ap_pruning"
 TREE_PORT_ROOT = REPO_ROOT / "data" / "results" / "tree_portfolios"
 CLUSTER_RETURNS = REPO_ROOT / "data" / "portfolios" / "clusters" / "cluster_returns.csv"
+RP_TREE_PORT_ROOT = REPO_ROOT / "data" / "results" / "rp_tree_portfolios"
 
 FEATS_LIST = [
     "LME",
@@ -247,6 +248,31 @@ def run_default_picks(port_n: int = 10, ap_root: Path | None = None) -> list[dic
 
     return out
 
+
+def run_rp_picks(port_n: int = 10, ap_root: Path | None = None) -> list[dict]:
+    """Run picks for RP trees if outputs exist."""
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    out: list[dict] = []
+
+    sub_tree = _triplet_subdir("OP", "Investment")
+    rp_sub_dir = "RP_" + sub_tree          # matches the prefix set in RP_Pruning
+    rp_ap_dir  = ap / rp_sub_dir
+    rp_csv     = RP_TREE_PORT_ROOT / sub_tree / "level_all_excess_combined.csv"
+
+    if rp_ap_dir.is_dir() and rp_csv.is_file():
+        print(f"pick_best_lambda: {rp_sub_dir}, port_n={port_n}")
+        out.append(
+            pick_best_lambda(
+                ap,
+                rp_sub_dir,
+                port_n,
+                rp_csv,
+                returns_index_col=None,
+                full_cv=False,
+            )
+        )
+
+    return out
 
 def run_full_paper_picks(
     ap_root: Path | None = None,

@@ -130,3 +130,56 @@ def AP_Pruning_clusters(
         ParallelN,
         weights_dict_df,
     )
+
+def RP_Pruning(
+    feats_list,
+    feat1,
+    feat2,
+    input_path,
+    output_path,
+    n_train_valid=360,
+    cvN=3,
+    runFullCV=False,
+    kmin=5,
+    kmax=50,
+    RunParallel=False,
+    ParallelN=10,
+    lambda0=None,
+    lambda2=None,
+    weights_dict_df=None,
+):
+    if lambda0 is None or lambda2 is None:
+        g0, g2 = get_lambda_grids()
+        lambda0 = g0 if lambda0 is None else lambda0
+        lambda2 = g2 if lambda2 is None else lambda2
+
+    i1 = _resolve_feat_idx(feats_list, feat1)
+    i2 = _resolve_feat_idx(feats_list, feat2)
+    feats_chosen = ["LME", feats_list[i1], feats_list[i2]]
+    sub_dir = "RP_" + "_".join(feats_chosen)   # e.g. RP_LME_OP_Investment
+
+    csv_path = Path(input_path) / "_".join(feats_chosen) / "level_all_excess_combined.csv"
+    ports = pd.read_csv(csv_path)
+
+    if 'yyyymm' in ports.columns:
+        ports = ports.drop(columns=['yyyymm'])
+
+    # adj_w is a no-op in lasso_valid_full but required by the interface
+    adj_w = [1.0] * ports.shape[1]
+
+    lasso_valid_full(
+        ports,
+        lambda0,
+        lambda2,
+        output_path,
+        sub_dir,
+        adj_w,
+        n_train_valid,
+        cvN,
+        runFullCV,
+        kmin,
+        kmax,
+        RunParallel,
+        ParallelN,
+        weights_dict_df,
+    )

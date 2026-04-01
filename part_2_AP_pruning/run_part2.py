@@ -20,7 +20,7 @@ _P2 = Path(__file__).resolve().parent
 if str(_P2) not in sys.path:
     sys.path.insert(0, str(_P2))
 
-from AP_Pruning import AP_Pruning, AP_Pruning_clusters  # noqa: E402
+from AP_Pruning import AP_Pruning, AP_Pruning_clusters, RP_Pruning  # noqa: E402
 from lambda_grids import ap_lambda_grid_mode, get_lambda_grids  # noqa: E402
 
 REPO_ROOT = _P2.parent
@@ -40,17 +40,23 @@ FEATS_LIST = [
 TREE_INPUT_ROOT = REPO_ROOT / "data" / "results" / "tree_portfolios"
 TREE_PORT_FILE = "level_all_excess_combined_filtered.csv"
 AP_OUT = REPO_ROOT / "data" / "results" / "ap_pruning"
+RP_TREE_INPUT_ROOT = REPO_ROOT / "data" / "results" / "rp_tree_portfolios"
+RP_TREE_PORT_FILE = "level_all_excess_combined.csv"
+#RP_OUT = REPO_ROOT / "data" / "results" / "rp_pruning"
+
 
 CLUSTER_RETURNS = REPO_ROOT / "data" / "portfolios" / "clusters" / "cluster_returns.csv"
 
 
-def _run_part3_pick_best(port_n: int = 10) -> None:
+def _run_part3_pick_best(port_n: int = 10, run_rp: bool = False) -> None:
     p = REPO_ROOT / "part_3_metrics_collection" / "pick_best_lambda.py"
     spec = importlib.util.spec_from_file_location("seminar_pick_best", p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     print("--- PART 3: λ* from max validation Sharpe (Pick_Best_Lambda.R logic) ---")
     picked = list(mod.run_default_picks(port_n=port_n))
+    if run_rp:
+        picked += list(mod.run_rp_picks(port_n=port_n))
     for r in picked:
         print(r)
     mod.print_ap_comparison(picked)
@@ -59,6 +65,7 @@ def _run_part3_pick_best(port_n: int = 10) -> None:
 def run_part2(
     run_trees: bool = True,
     run_clusters: bool = True,
+    run_rp_trees: bool = False,
     tree_feat1: str | int = "OP",
     tree_feat2: str | int = "Investment",
     n_train_valid: int = 360,
@@ -123,10 +130,35 @@ def run_part2(
                 IsTree=True,
             )
             print(f"Tree grid search saved under: {AP_OUT / sub}")
+    if run_rp_trees:
+        i1 = _resolve_i(tree_feat1)
+        i2 = _resolve_i(tree_feat2)
+        sub = "_".join(["LME", FEATS_LIST[i1], FEATS_LIST[i2]])
+        rp_csv = RP_TREE_INPUT_ROOT / sub / RP_TREE_PORT_FILE
+        if not rp_csv.is_file():
+            print(f"Skipping RP trees: missing {rp_csv}")
+        else:
+            print("--- PART 2: AP pruning (RP-trees, excess returns) ---")
+            RP_Pruning(
+                FEATS_LIST,
+                tree_feat1,
+                tree_feat2,
+                str(RP_TREE_INPUT_ROOT),
+                out_str,
+                n_train_valid=n_train_valid,
+                cvN=cvN,
+                runFullCV=run_full_cv,
+                kmin=5,
+                kmax=50,
+                RunParallel=run_parallel,
+                ParallelN=parallel_n,
+            )
+            print(f"RP-tree grid search saved under: {AP_OUT / sub}")
 
-    if run_pick_best and (run_clusters or run_trees):
+
+    if run_pick_best and (run_clusters or run_trees or run_rp_trees):
         try:
-            _run_part3_pick_best(port_n=port_n)
+            _run_part3_pick_best(port_n=port_n, run_rp=run_rp_trees)
         except Exception as e:
             print(f"Part 3 pick_best_lambda skipped or failed: {e}")
 
@@ -138,4 +170,4 @@ def _resolve_i(f: str | int) -> int:
 
 
 if __name__ == "__main__":
-    run_part2(run_trees=True, run_clusters=True)
+    run_part2(run_trees=True, run_clusters=True, run_rp_trees=True)

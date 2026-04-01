@@ -4,11 +4,13 @@ from pathlib import Path
 
 # Importeer je nieuwe imputatie script
 from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data
-from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import impute_characteristics 
+from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation
 from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import create_tree_portfolio
 from part_1_portfolio_creation.tree_portfolio_creation.step2_cluster_portfolios import create_cluster_portfolios
 from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_trees import combine_trees
 from part_1_portfolio_creation.tree_portfolio_creation.step4_filter_portfolios import filter_tree_ports
+from part_1_portfolio_creation.tree_portfolio_creation.step2_RP_tree_portfolios import create_rp_tree_portfolio
+from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_RP_trees import combine_rp_trees
 
 
 def _load_run_part2():
@@ -28,7 +30,7 @@ if __name__ == "__main__":
     # --- STAP 1B: IMPUTATIE (Specifiek voor Clustering) ---
     # Slaat 'panel_clustering.parquet' op (met Forward Fill + 0.5)
     print("--- STARTING STEP 1B: IMPUTATION FOR CLUSTERING ---")
-    impute_characteristics()
+    run_mice_imputation()
     
     print("\n" + "="*50 + "\n")
 
@@ -46,13 +48,26 @@ if __name__ == "__main__":
     # --- STAP 2B: EXTENSION (Jouw Ward Clustering) ---
     # Leest 'panel_clustering_mice.parquet'; schrijft cluster_returns.csv + dendrogram
     print("--- STARTING STEP 2B: CLUSTER PORTFOLIOS (Extension) ---")
-    create_cluster_portfolios()
+    #create_cluster_portfolios()
 
     print("\nPipeline complete! Results saved in /data/results/ and /data/portfolios/clusters/")
 
     #Just these for now, full run we need to loop over al 36 combinations of possible characteristics. 
-    combine_trees(feat1='OP', feat2='Investment')
-    filter_tree_ports(feat1='OP', feat2='Investment')
+    #combine_trees(feat1='OP', feat2='Investment')
+    #filter_tree_ports(feat1='OP', feat2='Investment')
+
+    # --- STAP 2C: EXTENSION (RP Trees) ---
+    print("--- STARTING STEP 2C: RP TREE PORTFOLIOS (Extension) ---")
+    create_rp_tree_portfolio(
+        feat1       = 'OP',
+        feat2       = 'Investment',
+        output_path = Path('data/results/rp_tree_portfolios')
+    )
+    combine_rp_trees(
+        feat1    = 'OP',
+        feat2    = 'Investment',
+        tree_out = Path('data/results/rp_tree_portfolios')
+    )
 
     print("\n" + "=" * 50 + "\n")
     print("--- PART 2: AP pruning (LASSO λ grid → train / valid / test Sharpe) ---")
@@ -64,4 +79,4 @@ if __name__ == "__main__":
             "Part 3 then prints a Ward vs LME_OP_Investment test_SR comparison. "
             "Or: python part_2_AP_pruning/run_part2.py"
         )
-    _load_run_part2().run_part2(run_trees=run_trees, run_clusters=True)
+    _load_run_part2().run_part2(run_trees=run_trees, run_clusters=True, run_rp_trees=True)
