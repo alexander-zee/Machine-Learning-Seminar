@@ -96,6 +96,41 @@ def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2, port
     pd.DataFrame(sr_n, index=['train_SR', 'valid_SR', 'test_SR']).to_csv(
         grid_search_path / subdir / 'SR_N.csv', index=True)
 
+def get_mu_sigma(feat1, feat2, ap_prune_result_path, portfolio_path,
+                      port_name, port_n, n_train_valid=360):
+    """
+    Return mu (mean) and sigma (std) of the SDF for the selected portfolio
+    at a given k, on both the train and test windows.
+
+    These match exactly the values used to compute train_SR and test_SR
+    in _run_one_lambda0: SR = sdf.mean() / sdf.std(ddof=1)
+    """
+    subdir   = '_'.join(['LME', feat1, feat2])
+    base     = Path(ap_prune_result_path) / subdir
+
+    ports_df = pd.read_csv(base / f'Selected_Ports_{port_n}.csv')
+    weights  = pd.read_csv(base / f'Selected_Ports_Weights_{port_n}.csv').values.flatten()
+
+    all_ports   = pd.read_csv(Path(portfolio_path) / subdir / port_name)
+    ports_train = all_ports.iloc[:n_train_valid][ports_df.columns]
+    ports_test  = all_ports.iloc[n_train_valid:][ports_df.columns]
+
+    sdf_train = ports_train.values @ weights
+    sdf_test  = ports_test.values  @ weights
+
+    return {
+        'train': {
+            'mu':    sdf_train.mean(),
+            'sigma': sdf_train.std(ddof=1),
+            'SR':    sdf_train.mean() / sdf_train.std(ddof=1),
+        },
+        'test': {
+            'mu':    sdf_test.mean(),
+            'sigma': sdf_test.std(ddof=1),
+            'SR':    sdf_test.mean() / sdf_test.std(ddof=1),
+        },
+    }
+
 
 if __name__ == '__main__':
     GRID = Path('data/results/grid_search/tree')

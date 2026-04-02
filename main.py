@@ -15,8 +15,8 @@ from part_1_portfolio_creation.tree_portfolio_creation.step4_filter_portfolios i
 from part_2_AP_pruning.AP_Pruning import AP_Pruning
 from part_2_AP_pruning.RP_Pruning import RP_Pruning
 from part_2_AP_pruning.Mice_RP_Pruning import Mice_RP_Pruning
-from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
-from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lambda, mice_pick_sr_n
+from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n, get_mu_sigma
+from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lambda, mice_pick_sr_n, mice_get_mu_sigma
 
 # Configuration (same as in R for the demonstration)
 FEAT1 = 'OP'
@@ -32,7 +32,7 @@ N_FEATURES_PER_SPLIT = 3   # number of features randomly selected per split leve
 if __name__ == "__main__":
     # --- STAP 1: DATA PREPARATION (Basis) ---
     # Slaat 'panel_benchmark.parquet' op (met NaNs, zoals het paper)
-    print("--- STARTING STEP 1: DATA PREPARATION ---")
+    #print("--- STARTING STEP 1: DATA PREPARATION ---")
     #prepare_data()
     
     # --- STAP 1B: IMPUTATIE (Specifiek voor Clustering) ---
@@ -95,21 +95,36 @@ if __name__ == "__main__":
 
     print("\n=== STEP 6: Pick Best Lambda (for k = 10) ===")
     # This will generate the files Selected_Ports_10.csv, etc.
-    #best_sr = pick_best_lambda(
-    #    feat1=FEAT1,
-    #    feat2=FEAT2,
-    #    ap_prune_result_path=Path('data/results/grid_search/tree'),
-    #    port_n=PORT_N,
-    #    lambda0=LAMBDA0,
-    #    lambda2=LAMBDA2,
-    #    portfolio_path=Path('data/results/tree_portfolios'),
-    #    port_name='level_all_excess_combined_filtered.csv',
-    #    full_cv=False,
-    #    write_table=True
-    #)
-    #print(f"Best SR for k={PORT_N}: train={best_sr[0]:.4f}, valid={best_sr[1]:.4f}, test={best_sr[2]:.4f}")
+    best_sr = pick_best_lambda(
+        feat1=FEAT1,
+        feat2=FEAT2,
+        ap_prune_result_path=Path('data/results/grid_search/tree'),
+        port_n=PORT_N,
+        lambda0=LAMBDA0,
+        lambda2=LAMBDA2,
+        portfolio_path=Path('data/results/tree_portfolios'),
+        port_name='level_all_excess_combined_filtered.csv',
+        full_cv=False,
+        write_table=True
+    )
+    print(f"Best SR for k={PORT_N}: train={best_sr[0]:.4f}, valid={best_sr[1]:.4f}, test={best_sr[2]:.4f}")
 
-    print("\n=== STEP 7: Collect SR_N for k = 5..50 ===")
+    print("\n=== STEP 6D cont.: Mu and Sigma for k=10 ===")
+    stats_tree = get_mu_sigma(
+        feat1                = FEAT1,
+        feat2                = FEAT2,
+        ap_prune_result_path = Path('data/results/grid_search/tree'),
+        portfolio_path       = Path('data/results/tree_portfolios'),
+        port_name            = 'level_all_excess_combined.csv',
+        port_n               = PORT_N,
+        n_train_valid        = 360
+    )
+    print(f"Train — mu={stats_tree['train']['mu']:.6f}  sigma={stats_tree['train']['sigma']:.6f}  SR={stats_tree['train']['SR']:.4f}")
+    print(f"Test  — mu={stats_tree['test']['mu']:.6f}   sigma={stats_tree['test']['sigma']:.6f}   SR={stats_tree['test']['SR']:.4f}")
+    # Verify test SR matches what was saved in step 6D
+    print(f"Cross-check: saved test_SR={best_sr[2]:.4f}  recomputed={stats_tree['test']['SR']:.4f}  match={abs(best_sr[2] - stats_tree['test']['SR']) < 1e-8}")
+
+    #print("\n=== STEP 7: Collect SR_N for k = 5..50 ===")
     #pick_sr_n(
     #    feat1=FEAT1,
     #    feat2=FEAT2,
@@ -122,14 +137,14 @@ if __name__ == "__main__":
     #    port_file_name='level_all_excess_combined_filtered.csv'
     #)
 
-    print("\n=== STEP 2C: RP Tree Portfolios ===")
+    #print("\n=== STEP 2C: RP Tree Portfolios ===")
     #create_rp_tree_portfolio(
     #    feat1       = FEAT1,
     #    feat2       = FEAT2,
     #    output_path = Path('data/results/rp_tree_portfolios')
     #)
 
-    print("\n=== STEP 3B: Combine RP Trees ===")
+    #print("\n=== STEP 3B: Combine RP Trees ===")
     #combine_rp_trees(
     #    feat1       = FEAT1,
     #    feat2       = FEAT2,
@@ -139,7 +154,7 @@ if __name__ == "__main__":
 
     # Note: no filter step for RP trees — combine already saves the final CSV
 
-    print("\n=== STEP 5B: RP-Pruning Grid Search ===")
+    #print("\n=== STEP 5B: RP-Pruning Grid Search ===")
     #RP_Pruning(
     #    feat1          = FEAT1,
     #    feat2          = FEAT2,
@@ -159,21 +174,37 @@ if __name__ == "__main__":
     #)
 
     print("\n=== STEP 6B: Pick Best Lambda for RP Trees (k=10) ===")
-    #best_sr_rp = pick_best_lambda(
-    #    feat1               = FEAT1,
-    #    feat2               = FEAT2,
-    #    ap_prune_result_path= Path('data/results/grid_search/rp_tree'),
-    #    port_n              = PORT_N,
-    #    lambda0             = LAMBDA0,
-    #    lambda2             = LAMBDA2,
-    #    portfolio_path      = Path('data/results/rp_tree_portfolios'),
-    #    port_name           = 'level_all_excess_combined.csv',
-    #    full_cv             = False,
-    #    write_table         = True
-    #)
-    #print(f"RP Best SR for k={PORT_N}: train={best_sr_rp[0]:.4f}, valid={best_sr_rp[1]:.4f}, test={best_sr_rp[2]:.4f}")
+    best_sr_rp = pick_best_lambda(
+        feat1               = FEAT1,
+        feat2               = FEAT2,
+        ap_prune_result_path= Path('data/results/grid_search/rp_tree'),
+        port_n              = PORT_N,
+        lambda0             = LAMBDA0,
+        lambda2             = LAMBDA2,
+        portfolio_path      = Path('data/results/rp_tree_portfolios'),
+        port_name           = 'level_all_excess_combined.csv',
+        full_cv             = False,
+        write_table         = True
+    )
+    print(f"RP Best SR for k={PORT_N}: train={best_sr_rp[0]:.4f}, valid={best_sr_rp[1]:.4f}, test={best_sr_rp[2]:.4f}")
 
-    print("\n=== STEP 7B: Collect SR_N for RP Trees (k=5..50) ===")
+    print("\n=== STEP 6B cont.: Mu and Sigma for k=10 ===")
+    stats_rp = get_mu_sigma(
+        feat1                = FEAT1,
+        feat2                = FEAT2,
+        ap_prune_result_path = Path('data/results/grid_search/rp_tree'),
+        portfolio_path       = Path('data/results/rp_tree_portfolios'),
+        port_name            = 'level_all_excess_combined.csv',
+        port_n               = PORT_N,
+        n_train_valid        = 360
+    )
+    print(f"Train — mu={stats_rp['train']['mu']:.6f}  sigma={stats_rp['train']['sigma']:.6f}  SR={stats_rp['train']['SR']:.4f}")
+    print(f"Test  — mu={stats_rp['test']['mu']:.6f}   sigma={stats_rp['test']['sigma']:.6f}   SR={stats_rp['test']['SR']:.4f}")
+    # Verify test SR matches what was saved in step 6D
+    print(f"Cross-check: saved test_SR={best_sr_rp[2]:.4f}  recomputed={stats_rp['test']['SR']:.4f}  match={abs(best_sr_rp[2] - stats_rp['test']['SR']) < 1e-8}")
+
+
+    #print("\n=== STEP 7B: Collect SR_N for RP Trees (k=5..50) ===")
     #pick_sr_n(
     #    feat1           = FEAT1,
     #    feat2           = FEAT2,
@@ -186,14 +217,15 @@ if __name__ == "__main__":
     #    port_file_name  = 'level_all_excess_combined.csv'
     #)
 
-    print("\n=== STEP 2D: Mice RP Tree Portfolios ===")
+    #print("\n=== STEP 2D: Mice RP Tree Portfolios ===")
     #create_mice_rp_tree_portfolio(n_features_per_split=N_FEATURES_PER_SPLIT, all_features=ALL_FEATURES)
 
-    print("\n=== STEP 3D: Combine Mice RP Trees ===")
+    #print("\n=== STEP 3D: Combine Mice RP Trees ===")
     #combine_mice_rp_trees(all_features=ALL_FEATURES)
 
-    print("\n=== STEP 5D: Mice RP-Pruning Grid Search ===")
-    #Mice_RP_Pruning(allfeatures=ALL_FEATURES, input_path=Path('data/results/mice_rp_tree_portfolios'), 
+    #print("\n=== STEP 5D: Mice RP-Pruning Grid Search ===")
+    #Mice_RP_Pruning(allfeatures=ALL_FEATURES, 
+    #                input_path=Path('data/results/mice_rp_tree_portfolios'), 
     #                input_file_name='level_all_excess_combined.csv', 
     #                output_path=Path('data/results/grid_search/mice_rp_tree'),
     #                n_train_valid  = 360,
@@ -219,6 +251,19 @@ if __name__ == "__main__":
         write_table = True)
     print(f"RP Best SR for k={PORT_N}: train={best_sr_mice_rp[0]:.4f}, valid={best_sr_mice_rp[1]:.4f}, test={best_sr_mice_rp[2]:.4f}")
 
+    print("\n=== STEP 6D cont.: Mu and Sigma for k=10 ===")
+    stats_mice_rp = mice_get_mu_sigma(
+        allfeatures          = ALL_FEATURES,
+        ap_prune_result_path = Path('data/results/grid_search/mice_rp_tree'),
+        portfolio_path       = Path('data/results/mice_rp_tree_portfolios'),
+        port_name            = 'level_all_excess_combined.csv',
+        port_n               = PORT_N,
+        n_train_valid        = 360
+    )
+    print(f"Train — mu={stats_mice_rp['train']['mu']:.6f}  sigma={stats_mice_rp['train']['sigma']:.6f}  SR={stats_mice_rp['train']['SR']:.4f}")
+    print(f"Test  — mu={stats_mice_rp['test']['mu']:.6f}   sigma={stats_mice_rp['test']['sigma']:.6f}   SR={stats_mice_rp['test']['SR']:.4f}")
+    # Verify test SR matches what was saved in step 6D
+    print(f"Cross-check: saved test_SR={best_sr_mice_rp[2]:.4f}  recomputed={stats_mice_rp['test']['SR']:.4f}  match={abs(best_sr_mice_rp[2] - stats_mice_rp['test']['SR']) < 1e-8}")
 
     print("\n=== STEP 7D: Collect SR_N for RP Trees (k=5..50) ===")
     #mice_pick_sr_n(allfeatures=ALL_FEATURES, grid_search_path= Path('data/results/grid_search/mice_rp_tree'),
