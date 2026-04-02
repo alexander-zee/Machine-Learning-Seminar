@@ -1,14 +1,17 @@
 from pathlib import Path
 # Importeer je nieuwe imputatie script
 from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data
-from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
+#from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
 from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import create_tree_portfolio
+from part_1_portfolio_creation.tree_portfolio_creation.step2_RP_tree_portfolios import create_rp_tree_portfolio
 from part_1_portfolio_creation.tree_portfolio_creation.step2_cluster_portfolios import create_cluster_portfolios
 from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_trees import combine_trees
+from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_RP_trees import combine_rp_trees
 from part_1_portfolio_creation.tree_portfolio_creation.step4_filter_portfolios import filter_tree_ports
 
 # AP‑Pruning and metric collection modules
 from part_2_AP_pruning.AP_Pruning import AP_Pruning
+from part_2_AP_pruning.RP_Pruning import RP_Pruning
 from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
 
 # Configuration (same as in R for the demonstration)
@@ -25,7 +28,7 @@ if __name__ == "__main__":
     # --- STAP 1: DATA PREPARATION (Basis) ---
     # Slaat 'panel_benchmark.parquet' op (met NaNs, zoals het paper)
     print("--- STARTING STEP 1: DATA PREPARATION ---")
-    prepare_data()
+    #prepare_data()
     
     # --- STAP 1B: IMPUTATIE (Specifiek voor Clustering) ---
     # Slaat 'panel_clustering.parquet' op (met Forward Fill + 0.5)
@@ -36,7 +39,7 @@ if __name__ == "__main__":
 
     # --- STAP 2A: BENCHMARK (De Bomen van je collega) ---
     # Deze functie leest intern 'panel_benchmark.parquet' (zonder jouw wijzigingen)
-    print("--- STARTING STEP 2A: TREE PORTFOLIOS (Benchmark) ---")
+    #print("--- STARTING STEP 2A: TREE PORTFOLIOS (Benchmark) ---")
     #create_tree_portfolio(
     #    feat1       = 'OP',
     #    feat2       = 'Investment',
@@ -50,22 +53,22 @@ if __name__ == "__main__":
     #print("--- STARTING STEP 2B: CLUSTER PORTFOLIOS (Extension) ---")
     #create_cluster_portfolios()
 
-    print("\n=== STEP 3: Combine Trees ===")
+    #print("\n=== STEP 3: Combine Trees ===")
     #combine_trees(
-    #    feat1=FEAT1,
-    #    feat2=FEAT2,
+    #   feat1=FEAT1,
+    #   feat2=FEAT2,
     #    factor_path=Path('data/raw'),          # directory containing rf_factor.csv
     #    tree_out=Path('data/results/tree_portfolios')
     #)
 
-    print("\n=== STEP 4: Filter Single‑Sorted Portfolios ===")
-    filter_tree_ports(
-        feat1=FEAT1,
-        feat2=FEAT2,
-        tree_out=Path('data/results/tree_portfolios')
-    )
+    #print("\n=== STEP 4: Filter Single‑Sorted Portfolios ===")
+    #filter_tree_ports(
+    #    feat1=FEAT1,
+    #    feat2=FEAT2,
+    #    tree_out=Path('data/results/tree_portfolios')
+    #)
 
-    print("\n=== STEP 5: AP‑Pruning Grid Search ===")
+    #print("\n=== STEP 5: AP‑Pruning Grid Search ===")
     # The filtered output from step4 is used as input for AP pruning
     AP_Pruning(
         feat1=FEAT1,
@@ -112,6 +115,70 @@ if __name__ == "__main__":
         lambda2=LAMBDA2,
         port_path=Path('data/results/tree_portfolios'),
         port_file_name='level_all_excess_combined_filtered.csv'
+    )
+
+    print("\n=== STEP 2C: RP Tree Portfolios ===")
+    create_rp_tree_portfolio(
+        feat1       = FEAT1,
+        feat2       = FEAT2,
+        output_path = Path('data/results/rp_tree_portfolios')
+    )
+
+    print("\n=== STEP 3B: Combine RP Trees ===")
+    combine_rp_trees(
+        feat1       = FEAT1,
+        feat2       = FEAT2,
+        factor_path = Path('data/raw'),
+        tree_out    = Path('data/results/rp_tree_portfolios')
+    )
+
+    # Note: no filter step for RP trees — combine already saves the final CSV
+
+    print("\n=== STEP 5B: RP-Pruning Grid Search ===")
+    RP_Pruning(
+        feat1          = FEAT1,
+        feat2          = FEAT2,
+        input_path     = Path('data/results/rp_tree_portfolios'),
+        input_file_name= 'level_all_excess_combined.csv',
+        output_path    = Path('data/results/grid_search/rp_tree'),
+        n_train_valid  = 360,
+        cvN            = 3,
+        runFullCV      = False,
+        kmin           = K_MIN,
+        kmax           = K_MAX,
+        RunParallel    = False,
+        ParallelN      = 10,
+        IsTree         = True,
+        lambda0        = LAMBDA0,
+        lambda2        = LAMBDA2
+    )
+
+    print("\n=== STEP 6B: Pick Best Lambda for RP Trees (k=10) ===")
+    best_sr_rp = pick_best_lambda(
+        feat1               = FEAT1,
+        feat2               = FEAT2,
+        ap_prune_result_path= Path('data/results/grid_search/rp_tree'),
+        port_n              = PORT_N,
+        lambda0             = LAMBDA0,
+        lambda2             = LAMBDA2,
+        portfolio_path      = Path('data/results/rp_tree_portfolios'),
+        port_name           = 'level_all_excess_combined.csv',
+        full_cv             = False,
+        write_table         = True
+    )
+    print(f"RP Best SR for k={PORT_N}: train={best_sr_rp[0]:.4f}, valid={best_sr_rp[1]:.4f}, test={best_sr_rp[2]:.4f}")
+
+    print("\n=== STEP 7B: Collect SR_N for RP Trees (k=5..50) ===")
+    pick_sr_n(
+        feat1           = FEAT1,
+        feat2           = FEAT2,
+        grid_search_path= Path('data/results/grid_search/rp_tree'),
+        mink            = K_MIN,
+        maxk            = K_MAX,
+        lambda0         = LAMBDA0,
+        lambda2         = LAMBDA2,
+        port_path       = Path('data/results/rp_tree_portfolios'),
+        port_file_name  = 'level_all_excess_combined.csv'
     )
 
     print("\nPipeline complete. All results stored under data/results/")

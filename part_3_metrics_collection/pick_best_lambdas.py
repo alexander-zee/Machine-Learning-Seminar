@@ -81,8 +81,16 @@ def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2, port
     sr_n = None
     for k in range(mink, maxk + 1):
         print(f"  k={k}")
+        base = grid_search_path / subdir
+        full_data = pd.read_csv(base / f'results_full_l0_1_l2_1.csv')
+        if full_data[full_data['portsN'] == k].empty:
+            print(f"  k={k} not found in results, skipping.")
+            continue
+
         sr = pick_best_lambda(feat1, feat2, grid_search_path, k, lambda0, lambda2,
                               port_path, port_file_name, full_cv=False, write_table=True)
+        
+
         sr_n = sr.reshape(-1, 1) if sr_n is None else np.hstack([sr_n, sr.reshape(-1, 1)])
 
     pd.DataFrame(sr_n, index=['train_SR', 'valid_SR', 'test_SR']).to_csv(
