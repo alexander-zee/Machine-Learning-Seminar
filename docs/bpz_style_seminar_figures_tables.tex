@@ -1,0 +1,166 @@
+% !TeX program = pdflatex
+% Seminar thesis layout inspired by the BPZ / SSRN paper *figure style* (clean axes, booktabs).
+% Content is **our** setup: AP-Trees vs Ward clustering extension, **monthly SR** as in the Python pipeline.
+% We do **not** replicate gross/net decompositions from the paper unless you add them yourself.
+% Compile: pdflatex bpz_style_seminar_figures_tables.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=0.9in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{hyperref}
+
+\captionsetup{font=small,labelfont=bf}
+\hypersetup{colorlinks=true,linkcolor=black,urlcolor=blue}
+
+\title{\textbf{Seminar results (paper-style layout)}\\
+\large AP-Trees and the Ward clustering extension}
+\author{\normalsize Machine Learning Seminar --- fill placeholders from pipeline outputs}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The reference PDF you shared is useful for \emph{visual style} (line charts across cross-sections, heatmaps over $N$ managed portfolios, booktabs tables).
+This file follows that \textbf{layout} but documents \textbf{our} estimators only: monthly Sharpe ratios from \texttt{lasso\_valid\_par\_full.py}, $\lambda^\star$ from validation SR, and tradable-factor alphas where applicable.
+\end{abstract}
+
+\section*{Figure A (style of paper Fig.~3): Monthly SR across cross-sections}
+
+\noindent
+\textbf{Seminar content:} two lines --- \textbf{AP-Trees} and \textbf{clustering extension} --- each point is the monthly SR of the pruned SDF portfolio for that cross-section (same $N$ and convention everywhere).
+Export: \texttt{python -m part\_3\_metrics\_collection.bpz\_style\_plots --fig3 docs/bpz\_style\_figure3\_template.csv}.
+
+\begin{figure}[H]
+  \centering
+  \IfFileExists{figure3_cross_section_SR.pdf}{%
+    \includegraphics[width=\linewidth]{figure3_cross_section_SR.pdf}
+  }{%
+    \fbox{\parbox[c][0.35\textheight]{\linewidth}{\centering
+      \vfill
+      Place exported PNG/PDF here, e.g.\ \texttt{figure3\_cross\_section\_SR\_bpz\_style.png} from \texttt{data/results/figures\_seminar/}.
+      \vfill
+    }}
+  }
+  \caption{Monthly Sharpe ratio (SR) across cross-sections: AP-Trees vs clustering extension.}
+  \label{fig:crosssection}
+\end{figure}
+
+\section*{Figure B (style of paper Fig.~4): SR heatmaps over cross-section $\times$ $N$}
+
+\noindent
+\textbf{Seminar content:} \textbf{two} heatmaps side by side (same colour scale), both showing \textbf{monthly SR} --- AP-Trees vs clustering --- not gross vs net.
+Each panel: rows = cross-sections, columns = number of managed portfolios $N$ (e.g.\ 5, 10, 20, 40).
+Helper: \texttt{plot\_figure4\_heatmap\_pair} in \texttt{bpz\_style\_plots.py}.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \IfFileExists{fig4_ap.pdf}{\includegraphics[width=\linewidth]{fig4_ap.pdf}}{\fbox{\rule{0pt}{0.22\textheight}\rule{0.9\linewidth}{0pt}}}
+    \caption{AP-Trees}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \IfFileExists{fig4_clustering.pdf}{\includegraphics[width=\linewidth]{fig4_clustering.pdf}}{\fbox{\rule{0pt}{0.22\textheight}\rule{0.9\linewidth}{0pt}}}
+    \caption{Clustering extension}
+  \end{subfigure}
+  \caption{Heatmaps of monthly Sharpe ratios (diverging scale around zero).}
+  \label{fig:heatmaps}
+\end{figure}
+
+\section*{Figure C (style of paper Fig.~6): Portfolio weights and alphas}
+
+\noindent
+Bars: portfolio weights on selected columns; points: factor-regression $\alpha$ with confidence bands from \texttt{paper\_style\_outputs.py} (tradable specs --- not Kenneth French SMB/HML library factors).
+
+\begin{figure}[H]
+  \centering
+  \IfFileExists{figure6_weights_alpha.pdf}{%
+    \includegraphics[width=\linewidth]{figure6_weights_alpha.pdf}
+  }{%
+    \fbox{\parbox[c][0.28\textheight]{\linewidth}{\centering\vfill Export from matplotlib or use seminar outputs\vfill}}
+  }
+  \caption{Weights and alphas for a selected cross-section and pruning level $N$.}
+  \label{fig:weights}
+\end{figure}
+
+\clearpage
+
+\section*{Table 1 (analogue): Summary statistics --- pruned to $N$ managed portfolios}
+
+\begin{table}[H]
+  \centering
+  \caption{Summary statistics for AP-Trees vs.\ clustering extension (one row per cross-section you report).}
+  \label{tab:summary}
+  \small
+  \begin{tabular}{@{}c lll c cccc cc c@{}}
+    \toprule
+    ID & \multicolumn{3}{c}{Characteristic} & SR & \multicolumn{4}{c}{Excess returns (factor model)} & \multicolumn{2}{c}{Shrinkage} & Turnover \\
+    \cmidrule(lr){2-4} \cmidrule(lr){6-9} \cmidrule(lr){10-11}
+    & 1 & 2 & 3 & & $\alpha$ (\%) & SE $\alpha$ & $\beta$ & SE $\beta$ & $\lambda_0$ & $\lambda_2$ & \\
+    \midrule
+    1 & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- & --- \\
+    \multicolumn{12}{c}{\textit{$\vdots$ add rows as needed $\vdots$}} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section*{Table 2 (analogue): Meta-regressions / robustness (optional)}
+
+\begin{table}[H]
+  \centering
+  \caption{Optional cross-sectional regressions of \emph{differences} between clustering and AP-Trees on explanatory variables you define (placeholder).}
+  \label{tab:meta}
+  \begin{tabular}{@{}l ccc@{}}
+    \toprule
+    & Outcome 1 & Outcome 2 & Outcome 3 \\
+    \midrule
+    Intercept & --- & --- & --- \\
+    & \footnotesize (---) & \footnotesize (---) & \footnotesize (---) \\
+    Covariate & --- & --- & --- \\
+    & \footnotesize (---) & \footnotesize (---) & \footnotesize (---) \\
+    \midrule
+    $N$ & --- & --- & --- \\
+    $R^2$ & --- & --- & --- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section*{Table 3 (analogue): Side-by-side portfolio metrics}
+
+\begin{table}[H]
+  \centering
+  \caption{Portfolio-level summary for one cross-section: AP-Trees vs clustering extension.}
+  \label{tab:portcompare}
+  \begin{tabular}{@{}l cc@{}}
+    \toprule
+    Metric & AP-Trees & Clustering ext. \\
+    \midrule
+    Turnover & --- & --- \\
+    Mean return $\mu$ (monthly) & --- & --- \\
+    Volatility $\sigma$ (monthly) & --- & --- \\
+    Weight scale & --- & --- \\
+    \bottomrule
+  \end{tabular}
+
+  \medskip
+  \parbox{\linewidth}{\footnotesize\textbf{Notes:} $\mu$ and $\sigma$ refer to the time series of the SDF-implied portfolio you export, not gross/net from the reference paper.}
+\end{table}
+
+\section*{Repository mapping}
+
+\begin{itemize}
+  \item SR definition: \texttt{part\_2\_AP\_pruning/lasso\_valid\_par\_full.py}; Ward detail: \texttt{docs/ward\_extension\_monthly\_sharpe\_manual.tex}.
+  \item $\lambda^\star$ and grids: \texttt{part\_3\_metrics\_collection/pick\_best\_lambda.py}.
+  \item Factor $\alpha$ table: \texttt{data/results/tables\_seminar/Table3\_style\_*.csv}.
+  \item Line chart helper: \texttt{part\_3\_metrics\_collection/bpz\_style\_plots.py}, template \texttt{docs/bpz\_style\_figure3\_template.csv}.
+\end{itemize}
+
+\end{document}

@@ -50,7 +50,7 @@ if __name__ == "__main__":
 
     print("\nPipeline complete! Results saved in /data/results/ and /data/portfolios/clusters/")
 
-    #Just these for now, full run we need to loop over al 36 combinations of possible characteristics. 
+    # For all AP-tree cross-sections (36 triplets): python run_all_tree_cross_sections.py
     combine_trees(feat1='OP', feat2='Investment')
     filter_tree_ports(feat1='OP', feat2='Investment')
 

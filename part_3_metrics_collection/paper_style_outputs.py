@@ -20,6 +20,7 @@ Run from repo root:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import matplotlib.patheffects as pe
@@ -612,6 +613,20 @@ def run_seminar_outputs(
         npath = write_table3_style_notes(tag, tpath)
         out["tables"].append(npath)
 
+    try:
+        from part_3_metrics_collection.paper_style_bpz_figures import (
+            generate_bpz_style_figures,
+        )
+
+        extra = generate_bpz_style_figures(ap, port_n_pick=port_n)
+        out["figures"].extend(extra.get("figures", []))
+        out["tables"].extend(extra.get("tables", []))
+        if extra.get("errors"):
+            for msg in extra["errors"]:
+                print(f"BPZ-style figures note: {msg}")
+    except Exception as e:
+        print(f"BPZ-style auto figures skipped: {e}")
+
     return out
 
 
@@ -619,10 +634,20 @@ def run_complete_paper_outputs(ap_root: Path | None = None) -> dict:
     """
     Full pick set (Ward N=10, AP-trees N=10 and N=40) + all Fig.10-style panels per pick +
     Fig.7-style bar + Table 3 CSV. Call after Part 2 has finished (run_pick_best can be off).
+
+    Set environment variable ``FULL_PAPER_ALL_TRIPLETS=1`` to generate picks and figures for
+    every computed ``LME_*`` cross-section (large output); default is OP × Investment only.
     """
     ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    all_tr = os.environ.get("FULL_PAPER_ALL_TRIPLETS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     print("--- Full paper picks (Ward + trees N=10,40) ---")
-    rows = run_full_paper_picks(ap_root=ap)
+    if all_tr:
+        print("  FULL_PAPER_ALL_TRIPLETS=1 — including every LME_* tree cross-section")
+    rows = run_full_paper_picks(ap_root=ap, all_tree_triplets=all_tr)
     print_ap_comparison(rows)
     return run_seminar_outputs(skip_pick=True, picked_rows=rows, port_n=10)
 

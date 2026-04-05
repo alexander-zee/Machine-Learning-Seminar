@@ -28,8 +28,8 @@ Rough runtime (order of magnitude; depends on CPU/RAM):
 If panel_benchmark.parquet already exists and you do not have FINALdataset.csv in-repo:
   set SKIP_PREPARE_DATA=1  (skips prepare_data only; you still need MICE inputs etc.)
 
-NOT included (add manually if your paper requires them):
-  - Loop over all 36 characteristic triplets (Fig. 6/7 across cross-sections)
+NOT included by default (use ``run_all_tree_cross_sections.py`` for all 36 triplets):
+  - Full cross-section loop is separate — expect very long Part 2 runtime × 28
   - AP-trees without interaction nodes (Fig. 8 ablation)
   - Rolling / kernel moments (Fig. 13, colleagues' extension)
   - ML baselines (Fig. 9)

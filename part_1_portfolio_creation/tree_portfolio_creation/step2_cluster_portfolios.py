@@ -15,7 +15,10 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 INPUT_PATH = SCRIPT_DIR.parent.parent / 'data' / 'prepared' / 'panel_clustering_mice.parquet'
 OUTPUT_DIR = SCRIPT_DIR.parent.parent / 'data' / 'portfolios' / 'clusters'
 N_CLUSTERS = 10
-CHARACTERISTICS = ['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover']
+CHARACTERISTICS = [
+    'LME', 'BEME', 'r12_2', 'OP', 'Investment',
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+]
 
 
 def _write_csv_replace(df: pd.DataFrame, path: Path) -> None:

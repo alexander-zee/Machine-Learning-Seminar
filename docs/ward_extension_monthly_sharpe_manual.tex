@@ -1,0 +1,231 @@
+﻿\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+
+\title{\textbf{The Ward Extension Sharpe Ratio Protocol}\\
+\large A Rigorous, Code-Faithful Manual for Monthly Sharpe Computation}
+\author{Machine Learning Seminar Pipeline Notes}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document is a strict, implementation-level guide to how monthly Sharpe ratios are produced for the clustering (Ward-linkage) extension in the current Python pipeline. It mirrors the actual code paths and formulas used in:
+\texttt{step2\_cluster\_portfolios.py}, \texttt{AP\_Pruning.py}, \texttt{lasso\_valid\_par\_full.py}, \texttt{lasso.py}, and \texttt{pick\_best\_lambda.py}.
+\end{abstract}
+
+\section{Scope and Definitions}
+We distinguish three objects:
+\begin{enumerate}[label=\textbf{D\arabic*.}]
+  \item \textbf{Cluster portfolio returns} $r_{c,t}$: monthly value-weighted returns for cluster $c \in \{1,\dots,10\}$.
+  \item \textbf{SDF-implied return series} $m_t(\bm b)$: monthly scalar return induced by a candidate AP/LASSO weight vector $\bm b$.
+  \item \textbf{Monthly Sharpe ratio} of that scalar series on a sample window:
+  \[
+    \mathrm{SR}(\bm b;\mathcal T)=\frac{\bar m}{s_m},\qquad
+    \bar m=\frac{1}{|\mathcal T|}\sum_{t\in\mathcal T}m_t,\quad
+    s_m=\sqrt{\frac{1}{|\mathcal T|-1}\sum_{t\in\mathcal T}(m_t-\bar m)^2}.
+  \]
+\end{enumerate}
+
+\noindent
+In code, the denominator is numerically stabilized as $s_m + 10^{-8}$.
+
+\section{Data Flow: End-to-End Map}
+\begin{enumerate}[label=\textbf{S\arabic*.}]
+  \item \textbf{Imputed panel input} loaded from
+  \texttt{data/prepared/panel\_clustering\_mice.parquet}
+  (source: \texttt{step1b\_impute\_data.py}; consumed in \texttt{step2\_cluster\_portfolios.py}).
+
+  \item \textbf{Monthly Ward clustering} produces
+  \texttt{data/portfolios/clusters/cluster\_returns.csv}.
+
+  \item \textbf{AP pruning for clusters} reads that matrix via
+  \texttt{AP\_Pruning\_clusters(...)} in \texttt{AP\_Pruning.py}, then calls
+  \texttt{lasso\_valid\_full(...)}.
+
+  \item \textbf{For each $(\lambda_0,\lambda_2)$ cell}, candidate sparse portfolios are evaluated on
+  train/valid/test windows in \texttt{lasso\_valid\_par\_full.py}; resulting Sharpe values are saved into
+  \texttt{results\_\{cv\_i|full\}\_l0\_\{i\}\_l2\_\{j\}.csv}.
+
+  \item \textbf{Lambda selection} in \texttt{pick\_best\_lambda.py} picks $(\lambda_0^\star,\lambda_2^\star)$ by maximal validation Sharpe, then reports corresponding train/test Sharpe.
+\end{enumerate}
+
+\section{Constructing Monthly Cluster Returns}
+\subsection{Monthly cross-section and Ward assignment}
+For each month $t$:
+\begin{enumerate}[label=(\alph*)]
+  \item Filter rows with non-missing \texttt{ret} and characteristics
+  \[
+  \{\texttt{LME},\texttt{BEME},\texttt{r12\_2},\texttt{OP},\texttt{Investment},\texttt{ST\_Rev},\texttt{LT\_Rev},\texttt{AC},\texttt{LTurnover}\}.
+  \]
+  \item Fit Ward agglomerative clustering with fixed $K=10$:
+  \[
+  \texttt{AgglomerativeClustering}(n\_\text{clusters}=10,\ \text{linkage}=\texttt{'ward'}).
+  \]
+\end{enumerate}
+
+\subsection{Within-cluster value weights}
+For each stock $i$ in month $t$:
+\begin{itemize}
+  \item If column \texttt{size} exists, define raw weight
+  \[
+  w_{i,t}=\exp\!\left(\mathrm{clip}(\texttt{size}_{i,t},-50,50)\right),
+  \]
+  after median imputation for missing \texttt{size}.
+  \item Else fallback: $w_{i,t}=1$ (equal-weight fallback).
+\end{itemize}
+
+Cluster return for cluster $c$ in month $t$:
+\[
+r_{c,t}=\frac{\sum_{i\in c_t} w_{i,t}\,\texttt{ret}_{i,t}}{\sum_{i\in c_t} w_{i,t}}.
+\]
+If weights are degenerate/non-finite, code falls back to uniform weights inside that cluster.
+
+The resulting matrix $R_t=(r_{1,t},\dots,r_{10,t})$ is saved as
+\texttt{cluster\_returns.csv} with monthly index and columns \texttt{cluster\_1} to \texttt{cluster\_10}.
+
+\section{AP/LASSO Transformation Used Before Sharpe Evaluation}
+Let $X\in\mathbb R^{n\times p}$ be training cluster returns, with $p=10$ for Ward extension.
+
+\subsection{Moment estimates}
+In the baseline clustering path (no kernel weights), moments are:
+\[
+\bm\mu = \frac{1}{n}\sum_{t=1}^n X_t,\qquad
+\Sigma = \mathrm{Cov}(X;\mathrm{ddof}=1).
+\]
+(Weighted moment branch exists for optional kernel extensions but is not active in the default Ward path.)
+
+Define:
+\[
+\bar\mu = \frac{1}{p}\sum_{j=1}^p \mu_j.
+\]
+For each mean-shrinkage value $\lambda_0$ from grid:
+\[
+\bm\mu^{(\lambda_0)} = \bm\mu + \lambda_0\bar\mu\,\mathbf 1.
+\]
+
+\subsection{Spectral transform}
+Eigen-decompose $\Sigma = VDV^\top$ with descending eigenvalues and keep positive modes $D_k>10^{-10}$:
+\[
+\tilde\Sigma = VD^{1/2}V^\top,
+\qquad
+\tilde\mu^{(\lambda_0)} = VD^{-1/2}V^\top\bm\mu^{(\lambda_0)}.
+\]
+
+\subsection{Ridge-augmented LASSO path}
+Given $\lambda_2$, \texttt{lasso.py} solves via augmented design:
+\[
+\underbrace{\begin{bmatrix}\tilde\Sigma\\ \sqrt{\lambda_2}I\end{bmatrix}}_{XX},
+\quad
+\underbrace{\begin{bmatrix}\tilde\mu^{(\lambda_0)}\\ \mathbf 0\end{bmatrix}}_{yy},
+\]
+then runs \texttt{sklearn.linear\_model.lars\_path}.
+
+Path coefficients are filtered by sparsity count
+\[
+K=\sum_j \mathbf 1\{|\beta_j|>10^{-10}\},
+\]
+and kept if $k_{\min}\le K\le k_{\max}$.
+For clusters, code uses effective $(k_{\min},k_{\max})=(3,10)$ clipped to $p$.
+
+\section{How Monthly Sharpe is Computed in Code}
+For each retained path row $\bm\beta$:
+\begin{enumerate}[label=(\alph*)]
+  \item Scale by adjustment weights:
+  \[
+  \bm b = \bm\beta\odot \bm a,
+  \]
+  where for clusters $\bm a=\mathbf 1$ (so this is identity).
+
+  \item Normalize exactly as in code (R-aligned):
+  \[
+  \bm b \leftarrow \frac{\bm b}{\max(|\sum_j b_j|,10^{-15})}.
+  \]
+
+  \item Build monthly SDF-implied scalar series on any sample matrix $P$ (train/valid/test):
+  \[
+  m_t(\bm b)=P_t\cdot\left(\frac{\bm b}{\bm a}\right).
+  \]
+  For clusters, $\bm a=\mathbf 1$, so $m_t(\bm b)=P_t\cdot\bm b$.
+
+  \item Compute sample Sharpe exactly as:
+  \[
+  \mathrm{SR}=\frac{\mathrm{mean}(m_t)}{\mathrm{std}(m_t;\mathrm{ddof}=1)+10^{-8}}.
+  \]
+\end{enumerate}
+
+This is performed separately on:
+\begin{itemize}
+  \item \textbf{train} window,
+  \item \textbf{validation} window (for CV files only),
+  \item \textbf{test} window.
+\end{itemize}
+
+\section{Time Splits and CV Protocol}
+From \texttt{run\_part2.py} defaults:
+\[
+n_{\text{train+valid}}=360,\qquad \texttt{cvN}=3.
+\]
+Hence each validation fold has 120 months.
+
+\subsection*{When \texttt{runFullCV=False} (default)}
+Only fold 3 is computed for validation and written as \texttt{results\_cv\_3\_...csv}.
+
+\subsection*{When \texttt{runFullCV=True}}
+All folds 1,2,3 are written. In \texttt{pick\_best\_lambda.py}, validation Sharpe per grid cell is:
+\[
+\mathrm{valid\_SR}_{i,j}=\frac{1}{3}\sum_{f=1}^3\mathrm{valid\_SR}_{i,j}^{(f)}.
+\]
+
+\section{Selecting the Sharpe Reported for the Cluster Extension}
+Inside \texttt{pick\_best\_lambda(...)} for \texttt{Ward\_clusters\_10}:
+\begin{enumerate}[label=\textbf{P\arabic*.}]
+  \item Determine feasible target $N$ (portsN) common to all $(\lambda_0,\lambda_2)$ cells:
+  largest $N\le N_{\text{requested}}$ present in every cell.
+  \item For each grid cell, take the \emph{first} row with \texttt{portsN==N} from
+  \texttt{results\_full\_...csv} for train/test SR,
+  and from CV files for valid SR.
+  \item Choose $(i^\star,j^\star)=\arg\max\mathrm{valid\_SR}_{i,j}$
+  (tie-break = first in NumPy row-major order).
+  \item Report
+  \[
+  (\mathrm{train\_SR},\mathrm{valid\_SR},\mathrm{test\_SR})
+  =(\mathrm{train\_SR}_{i^\star,j^\star},\mathrm{valid\_SR}_{i^\star,j^\star},\mathrm{test\_SR}_{i^\star,j^\star}).
+  \]
+\end{enumerate}
+
+\section{Reproducibility Checklist (Exact Pipeline)}
+\begin{enumerate}[label=\textbf{R\arabic*.}]
+  \item Generate imputed panel: \texttt{panel\_clustering\_mice.parquet}.
+  \item Run clustering step to create \texttt{cluster\_returns.csv}.
+  \item Run Part 2 with clusters enabled (and chosen lambda grid mode).
+  \item Run Part 3 picker for \texttt{Ward\_clusters\_10}.
+  \item Read reported Sharpe triplet from picker output or saved \texttt{train\_SR\_N.csv},
+  \texttt{valid\_SR\_N.csv}, \texttt{test\_SR\_N.csv}.
+\end{enumerate}
+
+\section{Implementation Notes and Non-Obvious Details}
+\begin{itemize}
+  \item Cluster extension uses $p=10$ portfolios, so AP pruning bounds are clipped to $[3,10]$.
+  \item Active-set count in \texttt{lasso.py} uses tolerance $10^{-10}$, not exact zero.
+  \item Sharpe denominator uses sample standard deviation (ddof=1), plus $10^{-8}$ stabilizer.
+  \item Default \texttt{run\_full\_paper\_picks()} in Part 3 uses \texttt{full\_cv=False} unless explicitly changed.
+\end{itemize}
+
+\section*{File Index}
+\begin{itemize}
+  \item Clustering returns: \texttt{part\_1\_portfolio\_creation/tree\_portfolio\_creation/step2\_cluster\_portfolios.py}
+  \item AP cluster pruning entry: \texttt{part\_2\_AP\_pruning/AP\_Pruning.py}
+  \item Sharpe evaluation loop: \texttt{part\_2\_AP\_pruning/lasso\_valid\_par\_full.py}
+  \item LASSO path construction: \texttt{part\_2\_AP\_pruning/lasso.py}
+  \item Lambda choice and reported SR: \texttt{part\_3\_metrics\_collection/pick\_best\_lambda.py}
+\end{itemize}
+
+\end{document}

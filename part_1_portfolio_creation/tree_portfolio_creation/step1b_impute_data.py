@@ -30,7 +30,10 @@ PATH_ORIGINAL = PREPARED_DIR / 'FINALdataset.parquet'
 PATH_YOUR_DATA = PREPARED_DIR / 'panel_benchmark.parquet'
 PATH_OUTPUT = PREPARED_DIR / 'panel_clustering_mice.parquet'
 
-CHAR_LIST = ['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover']
+CHAR_LIST = [
+    'LME', 'BEME', 'r12_2', 'OP', 'Investment',
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+]
 
 
 def run_mice_imputation():

@@ -20,13 +20,14 @@ COLUMN_MAP = {
     'ST_Rev':      'ST_Rev',
     'LT_Rev':      'LT_Rev',
     'Lturnover':   'LTurnover',
+    # Idiosyncratic variance (IVol); same role as BPZ / Table B.1 “IVol”
+    'svar':        'IdioVol',
 }
 
 # All characteristics that will be quantile ranked
 CHARACTERISTICS = [
     'LME', 'BEME', 'r12_2', 'OP', 'Investment',
-    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover'
-    # IdioVol added later once constructed
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
 ]
 
 Y_MIN = 1964
@@ -58,6 +59,12 @@ def prepare_data():
     print("Loading raw data...")
     df = pd.read_csv(RAW_PATH)
     df = df.rename(columns=COLUMN_MAP)
+    if 'IdioVol' not in df.columns:
+        raise ValueError(
+            "FINALdataset.csv must include a 'svar' column (idiosyncratic variance), "
+            "mapped to IdioVol in COLUMN_MAP — needed for BPZ-style nine secondaries "
+            "and C(9,2)=36 tree triplets."
+        )
 
     # ── Parse dates ───────────────────────────────────────────────────────────
     df['date'] = pd.to_datetime(df['date'])

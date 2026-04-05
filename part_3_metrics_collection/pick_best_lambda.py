@@ -9,27 +9,25 @@ Matches part_3_metrics_collection/Pick_Best_Lambda.R logic:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 AP_PRUNE_DEFAULT = REPO_ROOT / "data" / "results" / "ap_pruning"
+AP_PRUNE_OPT_QUANT = REPO_ROOT / "data" / "results" / "ap_pruning_optquantile"
 TREE_PORT_ROOT = REPO_ROOT / "data" / "results" / "tree_portfolios"
+TREE_PORT_OPT_QUANT = REPO_ROOT / "data" / "results" / "tree_portfolios_optquantile"
+RP_TREE_PORT_ROOT = REPO_ROOT / "data" / "results" / "rp_tree_portfolios"
 CLUSTER_RETURNS = REPO_ROOT / "data" / "portfolios" / "clusters" / "cluster_returns.csv"
 
-FEATS_LIST = [
-    "LME",
-    "BEME",
-    "r12_2",
-    "OP",
-    "Investment",
-    "ST_Rev",
-    "LT_Rev",
-    "AC",
-    "LTurnover",
-]
+from part_1_portfolio_creation.tree_portfolio_creation.cross_section_triplets import (  # noqa: E402
+    FEATS_LIST,
+)
 
 
 def load_lambda_grid_meta(ap_subdir: Path) -> tuple[np.ndarray, np.ndarray] | None:
@@ -73,6 +71,60 @@ def _triplet_subdir(feat1: str | int, feat2: str | int) -> str:
     else:
         i2 = feat2
     return "_".join(["LME", FEATS_LIST[i1], FEATS_LIST[i2]])
+
+
+def discover_lme_tree_ap_subdirs(
+    ap_root: Path | None = None,
+    tree_port_root: Path | None = None,
+) -> list[str]:
+    """
+    Subdirectories ``LME_*`` under ap_pruning that have Part~1 filtered tree returns
+    (so Part~2 / pick_best can run).
+    """
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    tpr = Path(tree_port_root) if tree_port_root is not None else TREE_PORT_ROOT
+    if not ap.is_dir():
+        return []
+    out: list[str] = []
+    for p in sorted(ap.iterdir()):
+        if not p.is_dir() or not p.name.startswith("LME_"):
+            continue
+        tree_csv = tpr / p.name / "level_all_excess_combined_filtered.csv"
+        if tree_csv.is_file():
+            out.append(p.name)
+    return out
+
+
+def discover_rp_tree_ap_subdirs(ap_root: Path | None = None) -> list[str]:
+    """``RP_LME_*`` folders under ap_pruning with matching RP Part~1 combined CSV."""
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    if not ap.is_dir():
+        return []
+    out: list[str] = []
+    for p in sorted(ap.iterdir()):
+        if not p.is_dir() or not p.name.startswith("RP_LME_"):
+            continue
+        core = p.name[3:]  # LME_feat_feat
+        tree_csv = RP_TREE_PORT_ROOT / core / "level_all_excess_combined.csv"
+        if tree_csv.is_file():
+            out.append(p.name)
+    return out
+
+
+def discover_tv_tree_ap_subdirs(ap_root: Path | None = None) -> list[str]:
+    """``TV_LME_*`` folders under ap_pruning with matching AP-tree filtered returns."""
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    if not ap.is_dir():
+        return []
+    out: list[str] = []
+    for p in sorted(ap.iterdir()):
+        if not p.is_dir() or not p.name.startswith("TV_LME_"):
+            continue
+        core = p.name[3:]  # LME_feat_feat
+        tree_csv = TREE_PORT_ROOT / core / "level_all_excess_combined_filtered.csv"
+        if tree_csv.is_file():
+            out.append(p.name)
+    return out
 
 
 def pick_best_lambda(
@@ -210,41 +262,101 @@ def pick_best_lambda(
     return out
 
 
-def run_default_picks(port_n: int = 10, ap_root: Path | None = None) -> list[dict]:
-    """Run picks for Ward clusters and (if outputs exist) LME_OP_Investment trees."""
+def run_default_picks(
+    port_n: int = 10,
+    ap_root: Path | None = None,
+    tree_port_root: Path | None = None,
+    *,
+    include_ward: bool = True,
+) -> list[dict]:
+    """Run picks for Ward clusters and every AP-tree cross-section that has Part~1+2 outputs."""
     ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    tpr = Path(tree_port_root) if tree_port_root is not None else TREE_PORT_ROOT
     out: list[dict] = []
 
-    ward = ap / "Ward_clusters_10"
-    if ward.is_dir() and CLUSTER_RETURNS.is_file():
-        print(f"pick_best_lambda: Ward_clusters_10, port_n={port_n}")
-        out.append(
-            pick_best_lambda(
-                ap,
-                "Ward_clusters_10",
-                port_n,
-                CLUSTER_RETURNS,
-                returns_index_col=0,
-                full_cv=False,
+    if include_ward:
+        ward = ap / "Ward_clusters_10"
+        if ward.is_dir() and CLUSTER_RETURNS.is_file():
+            print(f"pick_best_lambda: Ward_clusters_10, port_n={port_n}")
+            out.append(
+                pick_best_lambda(
+                    ap,
+                    "Ward_clusters_10",
+                    port_n,
+                    CLUSTER_RETURNS,
+                    returns_index_col=0,
+                    full_cv=False,
+                )
             )
-        )
 
-    sub_tree = _triplet_subdir("OP", "Investment")
-    tree_dir = ap / sub_tree
-    tree_csv = TREE_PORT_ROOT / sub_tree / "level_all_excess_combined_filtered.csv"
-    if tree_dir.is_dir() and tree_csv.is_file():
+    for sub_tree in discover_lme_tree_ap_subdirs(ap, tree_port_root=tpr):
+        tree_dir = ap / sub_tree
+        tree_csv = tpr / sub_tree / "level_all_excess_combined_filtered.csv"
+        if not tree_dir.is_dir() or not tree_csv.is_file():
+            continue
         print(f"pick_best_lambda: {sub_tree}, port_n={port_n}")
-        out.append(
-            pick_best_lambda(
-                ap,
-                sub_tree,
-                port_n,
-                tree_csv,
-                returns_index_col=None,
-                full_cv=False,
+        try:
+            out.append(
+                pick_best_lambda(
+                    ap,
+                    sub_tree,
+                    port_n,
+                    tree_csv,
+                    returns_index_col=None,
+                    full_cv=False,
+                )
             )
-        )
+        except Exception as e:
+            print(f"  skipped {sub_tree}: {e}")
 
+    return out
+
+
+def run_rp_picks_all(port_n: int = 10, ap_root: Path | None = None) -> list[dict]:
+    """Run ``pick_best_lambda`` for every discovered RP-tree cross-section."""
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    out: list[dict] = []
+    for rp_sub in discover_rp_tree_ap_subdirs(ap):
+        core = rp_sub[3:]
+        rp_csv = RP_TREE_PORT_ROOT / core / "level_all_excess_combined.csv"
+        print(f"pick_best_lambda: {rp_sub}, port_n={port_n}")
+        try:
+            out.append(
+                pick_best_lambda(
+                    ap,
+                    rp_sub,
+                    port_n,
+                    rp_csv,
+                    returns_index_col=None,
+                    full_cv=False,
+                )
+            )
+        except Exception as e:
+            print(f"  skipped {rp_sub}: {e}")
+    return out
+
+
+def run_tv_picks_all(port_n: int = 10, ap_root: Path | None = None) -> list[dict]:
+    """Run ``pick_best_lambda`` for every discovered TV-tree cross-section."""
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    out: list[dict] = []
+    for tv_sub in discover_tv_tree_ap_subdirs(ap):
+        core = tv_sub[3:]
+        tree_csv = TREE_PORT_ROOT / core / "level_all_excess_combined_filtered.csv"
+        print(f"pick_best_lambda: {tv_sub}, port_n={port_n}")
+        try:
+            out.append(
+                pick_best_lambda(
+                    ap,
+                    tv_sub,
+                    port_n,
+                    tree_csv,
+                    returns_index_col=None,
+                    full_cv=False,
+                )
+            )
+        except Exception as e:
+            print(f"  skipped {tv_sub}: {e}")
     return out
 
 
@@ -254,12 +366,19 @@ def run_full_paper_picks(
     tree_port_ns: tuple[int, ...] = (10, 40),
     feat1_tree: str = "OP",
     feat2_tree: str = "Investment",
+    all_tree_triplets: bool = False,
+    tree_port_root: Path | None = None,
 ) -> list[dict]:
     """
     All picks typically reported in the paper-style bundle: Ward (N<=10), AP-trees for
     several N (e.g. 10 and 40). Skips tree N if no row exists in LASSO output.
+
+    If ``all_tree_triplets`` is True, runs tree picks for every discovered ``LME_*``
+    cross-section (see ``discover_lme_tree_ap_subdirs``) instead of only
+    ``feat1_tree`` × ``feat2_tree`` (can be very many figures/tables).
     """
     ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    tpr = Path(tree_port_root) if tree_port_root is not None else TREE_PORT_ROOT
     out: list[dict] = []
 
     ward = ap / "Ward_clusters_10"
@@ -276,27 +395,32 @@ def run_full_paper_picks(
             )
         )
 
-    sub_tree = _triplet_subdir(feat1_tree, feat2_tree)
-    tree_dir = ap / sub_tree
-    tree_csv = TREE_PORT_ROOT / sub_tree / "level_all_excess_combined_filtered.csv"
-    if not (tree_dir.is_dir() and tree_csv.is_file()):
-        return out
+    if all_tree_triplets:
+        tree_subs = discover_lme_tree_ap_subdirs(ap, tree_port_root=tpr)
+    else:
+        tree_subs = [_triplet_subdir(feat1_tree, feat2_tree)]
 
-    for pn in tree_port_ns:
-        print(f"pick_best_lambda: {sub_tree}, port_n={pn}")
-        try:
-            out.append(
-                pick_best_lambda(
-                    ap,
-                    sub_tree,
-                    pn,
-                    tree_csv,
-                    returns_index_col=None,
-                    full_cv=False,
+    for sub_tree in tree_subs:
+        tree_dir = ap / sub_tree
+        tree_csv = tpr / sub_tree / "level_all_excess_combined_filtered.csv"
+        if not (tree_dir.is_dir() and tree_csv.is_file()):
+            continue
+
+        for pn in tree_port_ns:
+            print(f"pick_best_lambda: {sub_tree}, port_n={pn}")
+            try:
+                out.append(
+                    pick_best_lambda(
+                        ap,
+                        sub_tree,
+                        pn,
+                        tree_csv,
+                        returns_index_col=None,
+                        full_cv=False,
+                    )
                 )
-            )
-        except (ValueError, KeyError) as e:
-            print(f"  skipped port_n={pn}: {e}")
+            except (ValueError, KeyError) as e:
+                print(f"  skipped {sub_tree} port_n={pn}: {e}")
 
     return out
 
