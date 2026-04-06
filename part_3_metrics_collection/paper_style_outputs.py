@@ -379,6 +379,7 @@ def build_sdf_series(
 
 
 # Same factor sets as SDF_TimeSeries_Regressions.R (tradable_factors.csv columns).
+_CAPM = ["Mkt-RF"]  # SDF ~ 1 + Mkt-RF only (α w.r.t. market, BPZ-style CAPM benchmark)
 _FF3 = ["Mkt-RF", "LME", "BEME"]
 _FF5 = ["Mkt-RF", "LME", "BEME", "OP", "Investment"]
 _FF11 = [
@@ -397,7 +398,7 @@ _FF11 = [
 
 
 def _factor_block(m: pd.DataFrame, spec: str) -> tuple[pd.DataFrame, list[str]]:
-    names = {"FF3": _FF3, "FF5": _FF5, "FF11": _FF11}[spec]
+    names = {"CAPM": _CAPM, "FF3": _FF3, "FF5": _FF5, "FF11": _FF11}[spec]
     missing = [c for c in names if c not in m.columns]
     if missing:
         raise KeyError(f"Merged data missing factor columns {missing}")
@@ -446,7 +447,7 @@ def regression_table_sdf(
     m = m.iloc[row_start:row_end]
     y = m["sdf"].to_numpy(dtype=float)
     rows = []
-    for spec in ("FF3", "FF5", "FF11"):
+    for spec in ("CAPM", "FF3", "FF5", "FF11"):
         Xblock, names = _factor_block(m, spec)
         X = Xblock.to_numpy(dtype=float)
         a, se, t, p = ols_intercept_t(y, X)
@@ -512,6 +513,7 @@ IMPORTANT — these are NOT classic Fama-French factors from Kenneth French's we
 They are the paper's TRADABLE long-short factors in paper_data/factor/tradable_factors.csv,
 exactly as wired in 0_code/3_Metrics_Collection/SDF_TimeSeries_Regressions.R:
 
+  CAPM_tradable: Mkt-RF only (alpha w.r.t. market; BPZ-style CAPM benchmark)
   FF3_tradable:  Mkt-RF, LME, BEME
   FF5_tradable:  Mkt-RF, LME, BEME, OP, Investment
   FF11_tradable: Mkt-RF, LME, BEME, OP, Investment, r12_2, ST_REV, LT_REV, AC, IdioVol, Lturnover

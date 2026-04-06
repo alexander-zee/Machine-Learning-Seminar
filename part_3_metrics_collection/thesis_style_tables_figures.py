@@ -22,6 +22,10 @@ Run from repo root::
     python -m part_3_metrics_collection.thesis_style_tables_figures --help
     python -m part_3_metrics_collection.thesis_style_tables_figures --all-approaches --write-tex
     python -m part_3_metrics_collection.thesis_style_tables_figures --figure7-multi --figure7-benchmark bench.csv
+    python -m part_3_metrics_collection.thesis_style_tables_figures --figure-alpha-t --alpha-factor CAPM
+
+``--figure-alpha-t`` plots **t-statistics on the SDF intercept** from ``sdf ~ 1 + Mkt-RF`` (CAPM) or
+``sdf ~ 1 + tradable FF5`` (same factor CSV as the thesis FF5 α columns), x-order by AP-tree SR.
 
 Extension 1 (opt-quantile AP trees) after Part~2 under ``ap_pruning_optquantile``::
 
@@ -56,6 +60,9 @@ from part_1_portfolio_creation.tree_portfolio_creation.cross_section_paper_order
     rp_ap_subdir_for_pair,
     tv_ap_subdir_for_pair,
 )
+from part_1_portfolio_creation.tree_portfolio_creation.cross_section_triplets import (  # noqa: E402
+    triplet_subdir_name,
+)
 from part_3_metrics_collection.pick_best_lambda import (  # noqa: E402
     AP_PRUNE_DEFAULT,
     CLUSTER_RETURNS,
@@ -84,7 +91,8 @@ def _portfolio_csv(
     *,
     tree_port_root: Path | None = None,
 ) -> Path:
-    sub = "_".join(["LME", fa, fb])
+    # Must match Part 1 folder names (FEATS_LIST order), not raw paper (fa, fb) order.
+    sub = triplet_subdir_name(fa, fb)
     if approach == "RP":
         return RP_TREE_PORT_ROOT / sub / RP_PORT_FILE
     root = Path(tree_port_root) if tree_port_root is not None else TREE_PORT_ROOT
@@ -115,15 +123,94 @@ def _ff5_pct_from_pick(ap: Path, sub_ap: str, r: dict) -> tuple[float, float, fl
     return a_pct, se_pct, p_ff
 
 
+def _factor_tstat_from_pick(ap: Path, sub_ap: str, r: dict, factor_spec: str) -> float:
+    """
+    t-statistic on the intercept from ``sdf ~ 1 + factors`` (see ``regression_table_sdf``).
+
+    ``factor_spec``: ``CAPM`` (Mkt-RF only) or ``FF5`` (tradable five-factor block).
+    """
+    if factor_spec not in ("CAPM", "FF5"):
+        raise ValueError("factor_spec must be CAPM or FF5")
+    pn = int(r["port_n"])
+    ports_p = ap / sub_ap / f"Selected_Ports_{pn}.csv"
+    w_p = ap / sub_ap / f"Selected_Ports_Weights_{pn}.csv"
+    if not ports_p.is_file() or not w_p.is_file():
+        return np.nan
+    try:
+        sdf = build_sdf_series(ports_p, w_p, TRADABLE_FACTORS)
+        reg = regression_table_sdf(sdf, TRADABLE_FACTORS)
+        row = reg.loc[reg["spec"] == factor_spec]
+        if row.empty:
+            return np.nan
+        return float(row.iloc[0]["t_stat"])
+    except Exception:
+        return np.nan
+
+
+def build_thesis_factor_tstat_table(
+    approach: Approach,
+    port_n: int = 10,
+    ap_root: Path | None = None,
+    write_pick_tables: bool = True,
+    tree_port_root: Path | None = None,
+    factor_spec: str = "CAPM",
+) -> pd.DataFrame:
+    """
+    One row per paper ID 1–36: t-stat on alpha for the chosen SDF at λ* (needs Selected_Ports* from pick).
+    """
+    if factor_spec not in ("CAPM", "FF5"):
+        raise ValueError("factor_spec must be CAPM or FF5")
+    ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    rows: list[dict] = []
+    for paper_id, (fa, fb) in enumerate(paper_table36_feature_pairs(), start=1):
+        c1 = THESIS_CHAR_LABELS["LME"]
+        c2 = THESIS_CHAR_LABELS[fa]
+        c3 = THESIS_CHAR_LABELS[fb]
+        sub_ap = _ap_subdir(approach, fa, fb)
+        pcsv = _portfolio_csv(approach, fa, fb, tree_port_root=tree_port_root)
+        base = {
+            "ID": paper_id,
+            "char_1": c1,
+            "char_2": c2,
+            "char_3": c3,
+            "ap_subdir": sub_ap,
+        }
+        if not pcsv.is_file() or not (ap / sub_ap).is_dir():
+            rows.append({**base, "t_stat": np.nan})
+            continue
+        try:
+            r = pick_best_lambda(
+                ap,
+                sub_ap,
+                port_n,
+                pcsv,
+                returns_index_col=None,
+                write_tables=write_pick_tables,
+            )
+        except Exception as e:
+            print(f"ID {paper_id} {sub_ap}: pick_best failed: {e}")
+            rows.append({**base, "t_stat": np.nan})
+            continue
+        t_val = _factor_tstat_from_pick(ap, sub_ap, r, factor_spec)
+        rows.append({**base, "t_stat": t_val})
+
+    return pd.DataFrame(rows)
+
+
 def build_thesis_summary_table(
     approach: Approach,
     port_n: int = 10,
     ap_root: Path | None = None,
     write_pick_tables: bool = False,
     tree_port_root: Path | None = None,
+    include_factor_tstats: bool = False,
 ) -> pd.DataFrame:
     """
     One row per paper ID 1–36; missing Part~2 → NaNs for numeric fields.
+
+    If ``include_factor_tstats`` is True, adds ``t_alpha_CAPM`` and ``t_alpha_FF5`` (t-stats on the
+    intercept in ``sdf ~ 1 + Mkt-RF`` and ``sdf ~ 1 + tradable FF5``), same regression window as
+    ``paper_style_outputs.regression_table_sdf``.
     """
     ap = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
     rows: list[dict] = []
@@ -141,17 +228,19 @@ def build_thesis_summary_table(
             "ap_subdir": sub_ap,
         }
         if not pcsv.is_file() or not (ap / sub_ap).is_dir():
-            rows.append(
-                {
-                    **base,
-                    "SR": np.nan,
-                    "alpha_FF5_pct": np.nan,
-                    "SE_FF5_pct": np.nan,
-                    "p_FF5": np.nan,
-                    "lambda_0": np.nan,
-                    "lambda_2": np.nan,
-                }
-            )
+            row_nan = {
+                **base,
+                "SR": np.nan,
+                "alpha_FF5_pct": np.nan,
+                "SE_FF5_pct": np.nan,
+                "p_FF5": np.nan,
+                "lambda_0": np.nan,
+                "lambda_2": np.nan,
+            }
+            if include_factor_tstats:
+                row_nan["t_alpha_CAPM"] = np.nan
+                row_nan["t_alpha_FF5"] = np.nan
+            rows.append(row_nan)
             continue
         try:
             r = pick_best_lambda(
@@ -164,17 +253,19 @@ def build_thesis_summary_table(
             )
         except Exception as e:
             print(f"ID {paper_id} {sub_ap}: pick_best failed: {e}")
-            rows.append(
-                {
-                    **base,
-                    "SR": np.nan,
-                    "alpha_FF5_pct": np.nan,
-                    "SE_FF5_pct": np.nan,
-                    "p_FF5": np.nan,
-                    "lambda_0": np.nan,
-                    "lambda_2": np.nan,
-                }
-            )
+            row_nan = {
+                **base,
+                "SR": np.nan,
+                "alpha_FF5_pct": np.nan,
+                "SE_FF5_pct": np.nan,
+                "p_FF5": np.nan,
+                "lambda_0": np.nan,
+                "lambda_2": np.nan,
+            }
+            if include_factor_tstats:
+                row_nan["t_alpha_CAPM"] = np.nan
+                row_nan["t_alpha_FF5"] = np.nan
+            rows.append(row_nan)
             continue
 
         la0 = np.asarray(r["lambda0"], dtype=float)
@@ -185,17 +276,20 @@ def build_thesis_summary_table(
 
         a_pct, se_pct, p_ff = _ff5_pct_from_pick(ap, sub_ap, r)
 
-        rows.append(
-            {
-                **base,
-                "SR": float(r["test_SR"]),
-                "alpha_FF5_pct": a_pct,
-                "SE_FF5_pct": se_pct,
-                "p_FF5": p_ff,
-                "lambda_0": lam0_star,
-                "lambda_2": lam2_star,
-            }
-        )
+        row_ok: dict = {
+            **base,
+            "SR": float(r["test_SR"]),
+            "alpha_FF5_pct": a_pct,
+            "SE_FF5_pct": se_pct,
+            "p_FF5": p_ff,
+            "lambda_0": lam0_star,
+            "lambda_2": lam2_star,
+        }
+        if include_factor_tstats:
+            # Needs Selected_Ports* — use write_pick_tables=True at least once before this path
+            row_ok["t_alpha_CAPM"] = _factor_tstat_from_pick(ap, sub_ap, r, "CAPM")
+            row_ok["t_alpha_FF5"] = _factor_tstat_from_pick(ap, sub_ap, r, "FF5")
+        rows.append(row_ok)
 
     return pd.DataFrame(rows)
 
@@ -603,6 +697,173 @@ def plot_figure7_multi(
     return out_path
 
 
+def _ward_factor_tstat_with_fallback(
+    ap_primary: Path | None, port_n: int, factor_spec: str
+) -> float | None:
+    """Ward clustering: one t-stat (same at every x); try primary ap_root then baseline."""
+    primary = Path(ap_primary) if ap_primary is not None else AP_PRUNE_DEFAULT
+    for ap_try in (primary, AP_PRUNE_DEFAULT):
+        ward = ap_try / WARD_SUB
+        if not ward.is_dir() or not CLUSTER_RETURNS.is_file():
+            continue
+        try:
+            r = pick_best_lambda(
+                ap_try,
+                WARD_SUB,
+                port_n,
+                CLUSTER_RETURNS,
+                returns_index_col=0,
+                write_tables=True,
+            )
+            t = _factor_tstat_from_pick(ap_try, WARD_SUB, r, factor_spec)
+            if np.isfinite(t):
+                return float(t)
+        except Exception:
+            continue
+    return None
+
+
+def plot_figure_alpha_t_multi(
+    df_ap: pd.DataFrame,
+    out_path: Path,
+    *,
+    df_rp: pd.DataFrame | None = None,
+    df_tv: pd.DataFrame | None = None,
+    ap_root: Path | None = None,
+    port_n: int = 10,
+    include_clustering: bool = True,
+    factor_spec: str = "CAPM",
+    t_column: str = "t_alpha_CAPM",
+    title: str | None = None,
+) -> Path:
+    """
+    Like ``plot_figure7_multi`` but y = **t-statistic on alpha** from ``sdf ~ 1 + factors``
+    (CAPM = Mkt-RF only; FF5 = tradable five-factor block). X-order still by ascending AP **SR**
+    (from SR table — pass the same ``df_ap`` used for Figure 7 with ``SR`` column).
+
+    ``t_column`` must exist on each dataframe (e.g. ``t_alpha_CAPM`` from
+    ``build_thesis_summary_table(..., include_factor_tstats=True)``).
+    """
+    if "SR" not in df_ap.columns:
+        raise ValueError("df_ap must include SR column for x-axis ordering (same as Figure 7).")
+    ids = _order_ids_figure7(df_ap, df_rp, df_tv)
+    x = np.arange(len(ids))
+    n = len(ids)
+
+    def aligned_t(df: pd.DataFrame | None) -> np.ndarray | None:
+        if df is None or t_column not in df.columns:
+            return None
+        m = df.set_index("ID").reindex(ids)
+        return m[t_column].astype(float).values
+
+    y_ap = aligned_t(df_ap)
+    if y_ap is None:
+        y_ap = np.full(n, np.nan)
+    y_rp = aligned_t(df_rp)
+    y_tv = aligned_t(df_tv)
+
+    fig, ax = plt.subplots(figsize=(11.5, 4.8))
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    spec_lab = "CAPM (Mkt-RF)" if factor_spec == "CAPM" else "tradable FF5"
+    if np.isfinite(y_ap).any():
+        ax.plot(
+            x,
+            y_ap,
+            color="#d62728",
+            marker="o",
+            markersize=4,
+            linewidth=1.2,
+            linestyle="-",
+            label="AP-Tree",
+            zorder=4,
+        )
+    if y_rp is not None and np.isfinite(y_rp).any():
+        ax.plot(
+            x,
+            y_rp,
+            color="#1f77b4",
+            marker="s",
+            markersize=4,
+            linewidth=1.2,
+            linestyle=":",
+            label="RP-Tree",
+            zorder=3,
+        )
+    if y_tv is not None and np.isfinite(y_tv).any():
+        ax.plot(
+            x,
+            y_tv,
+            color="#2ca02c",
+            marker="^",
+            markersize=4,
+            linewidth=1.2,
+            linestyle=":",
+            label="Time-varying (TV)",
+            zorder=3,
+        )
+
+    ap_trees = Path(ap_root) if ap_root is not None else AP_PRUNE_DEFAULT
+    if include_clustering:
+        w_t = _ward_factor_tstat_with_fallback(ap_trees, port_n, factor_spec)
+        if w_t is None:
+            print(
+                "Alpha-t figure: Ward t-stat line skipped — need Ward Part~2 and cluster_returns.csv."
+            )
+        else:
+            ax.plot(
+                x,
+                np.full(n, w_t),
+                color="#ff7f0e",
+                linestyle="--",
+                linewidth=1.4,
+                label="Clustering (Ward)",
+                zorder=2,
+            )
+
+    ax.axhline(0.0, color="k", linewidth=0.6, zorder=1)
+    ax.axhline(1.96, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
+    ax.axhline(-1.96, color="0.55", linewidth=0.8, linestyle="--", zorder=0)
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(i) for i in ids], rotation=90, fontsize=7)
+    ax.set_xlabel("Cross-sections")
+    ax.set_ylabel("t-statistic (alpha)")
+    ax.grid(axis="y", linestyle="-", linewidth=0.8, color="0.85", alpha=0.9)
+    ax.set_axisbelow(True)
+
+    ymax = 3.0
+    ymin = -3.0
+    for arr in (y_ap, y_rp, y_tv):
+        if arr is not None and np.isfinite(arr).any():
+            ymax = max(ymax, float(np.nanmax(arr)))
+            ymin = min(ymin, float(np.nanmin(arr)))
+    pad = max(0.5, (ymax - ymin) * 0.08)
+    ax.set_ylim(ymin - pad, ymax + pad)
+
+    if title is None:
+        title = (
+            f"SDF alpha t-statistics vs. {spec_lab} — AP-, RP-, TV-trees vs. Ward "
+            "(x sorted by AP-tree SR)"
+        )
+    ax.set_title(title, fontsize=11, pad=8)
+    ax.legend(
+        title="Basis portfolios:",
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+        fontsize=7,
+        title_fontsize=8,
+        frameon=False,
+    )
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
 def plot_figure7_style(
     df: pd.DataFrame,
     out_path: Path,
@@ -810,6 +1071,17 @@ def _main_cli() -> None:
         "--export-suffix",
         default="",
         help="Append to exported .csv/.tex/.png basenames (e.g. _optquant) to avoid overwriting baseline tables.",
+    )
+    p.add_argument(
+        "--figure-alpha-t",
+        action="store_true",
+        help="Plot t-stats on SDF alpha (CAPM or FF5) for AP/RP/TV + Ward horizontal; writes extended CSVs.",
+    )
+    p.add_argument(
+        "--alpha-factor",
+        choices=["CAPM", "FF5"],
+        default="CAPM",
+        help="Benchmark for alpha regression (with --figure-alpha-t). CAPM = Mkt-RF only; FF5 = tradable block.",
     )
     args = p.parse_args()
 
@@ -1061,6 +1333,58 @@ def _main_cli() -> None:
             benchmark_csv=args.figure7_benchmark,
         )
         print(f"Wrote {figp}")
+
+    if args.figure_alpha_t:
+        fc = args.alpha_factor
+        tcol = "t_alpha_CAPM" if fc == "CAPM" else "t_alpha_FF5"
+        print(
+            "Building AP/RP/TV with alpha t-stats (pick_best + SDF ~ factors; may take several minutes)..."
+        )
+        df_ap_at = build_thesis_summary_table(
+            "AP",
+            port_n=args.port_n,
+            write_pick_tables=True,
+            ap_root=cli_ap,
+            tree_port_root=cli_tree,
+            include_factor_tstats=True,
+        )
+        df_rp_at = build_thesis_summary_table(
+            "RP",
+            port_n=args.port_n,
+            write_pick_tables=True,
+            ap_root=cli_ap,
+            tree_port_root=cli_tree,
+            include_factor_tstats=True,
+        )
+        df_tv_at = build_thesis_summary_table(
+            "TV",
+            port_n=args.port_n,
+            write_pick_tables=True,
+            ap_root=cli_ap,
+            tree_port_root=cli_tree,
+            include_factor_tstats=True,
+        )
+        for tag, df in [
+            ("AP_trees", df_ap_at),
+            ("RP_trees", df_rp_at),
+            ("TV_trees", df_tv_at),
+        ]:
+            outp = TAB_DIR / f"Thesis_Table36_{tag}_with_alpha_t_{fc}{sfx}.csv"
+            write_csv(df, outp)
+            print(f"Wrote {outp}")
+        figp_at = FIG_DIR / f"Thesis_Fig_alpha_t_{fc}_multi_AP_RP_TV_Ward{sfx}.png"
+        plot_figure_alpha_t_multi(
+            df_ap_at,
+            figp_at,
+            df_rp=df_rp_at,
+            df_tv=df_tv_at,
+            ap_root=cli_ap,
+            port_n=args.port_n,
+            include_clustering=not args.no_figure7_clustering,
+            factor_spec=fc,
+            t_column=tcol,
+        )
+        print(f"Wrote {figp_at}")
 
 
 if __name__ == "__main__":

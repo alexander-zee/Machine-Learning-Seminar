@@ -11,7 +11,10 @@ From repo root::
 
     python run_all_rp_cross_sections.py --help
     $env:AP_PRUNE_LAMBDA_GRID='fast'
-    python run_all_rp_cross_sections.py --part2-only --skip-existing-part2
+    python run_all_rp_cross_sections.py --part2-only --skip-existing-part2 --part2-parallel
+
+**Part 2 speed:** use ``--part2-parallel`` (same idea as ``run_all_tree_cross_sections``): parallel
+over λ₀ blocks inside each triplet. RP Part 2 is still much heavier than Part 1 (~2k columns).
 
 **Speed vs. paper default:** RP Part~1 is the same *order* of work as AP Part~1 (81 trees × 36
 triplets). There is no shortcut that reuses AP tree files. For **draft** runs, fewer trees::
@@ -49,6 +52,18 @@ def main() -> None:
     parser.add_argument("--skip-existing-part2", action="store_true")
     parser.add_argument("--no-clusters", action="store_true")
     parser.add_argument("--pick-best", action="store_true")
+    parser.add_argument(
+        "--part2-parallel",
+        action="store_true",
+        help="Parallel LASSO/CV inside each triplet's RP Part 2 (joblib over λ0; needs RAM).",
+    )
+    parser.add_argument(
+        "--part2-parallel-n",
+        type=int,
+        default=0,
+        metavar="N",
+        help="With --part2-parallel: worker count (default: min(16, cpu_count-1) if 0).",
+    )
     parser.add_argument(
         "--rp-n-trees",
         type=int,
@@ -132,20 +147,42 @@ def main() -> None:
             return any(sub_path.glob("results_full_l0_*_l2_*.csv"))
 
         first = True
-        for feat1, feat2 in pairs:
+        p2_n = args.part2_parallel_n
+        if args.part2_parallel and p2_n <= 0:
+            p2_n = min(16, max(2, (os.cpu_count() or 4) - 1))
+        elif not args.part2_parallel:
+            p2_n = 10
+
+        n_pairs_p2 = len(pairs)
+        for i_triplet, (feat1, feat2) in enumerate(pairs, start=1):
             sub = triplet_subdir_name(feat1, feat2)
             rp_sub = "RP_" + sub
             rp_sub_path = ap_out / rp_sub
+            pct_done = 100.0 * (i_triplet - 1) / n_pairs_p2 if n_pairs_p2 else 100.0
+            print(
+                f"\n[RP Part 2] Triplet {i_triplet}/{n_pairs_p2} "
+                f"({pct_done:.1f}% before this one) — {rp_sub}"
+            )
             if args.skip_existing_part2 and _part2_outputs_complete(rp_sub_path):
-                print(f"[skip part2 RP] {rp_sub} (complete grid outputs)")
+                print(f"  [skip part2 RP] complete grid outputs present")
                 first = False
+                pct_row = 100.0 * i_triplet / n_pairs_p2 if n_pairs_p2 else 100.0
+                print(
+                    f"  [RP Part 2] Triplet {i_triplet}/{n_pairs_p2} done — "
+                    f"{pct_row:.1f}% through triplet list"
+                )
                 continue
             tree_csv = rp_out / sub / mod.RP_TREE_PORT_FILE
             if not tree_csv.is_file():
-                print(f"[skip part2 RP] {sub}: missing {tree_csv}")
+                print(f"  [skip part2 RP] missing {tree_csv}")
                 first = False
+                pct_row = 100.0 * i_triplet / n_pairs_p2 if n_pairs_p2 else 100.0
+                print(
+                    f"  [RP Part 2] Triplet {i_triplet}/{n_pairs_p2} done — "
+                    f"{pct_row:.1f}% through triplet list"
+                )
                 continue
-            print(f"\n=== RP Part 2: {rp_sub} ===")
+            print(f"=== RP Part 2 run: {rp_sub} ===")
             mod.run_part2(
                 run_trees=False,
                 run_clusters=(first and not args.no_clusters),
@@ -153,8 +190,15 @@ def main() -> None:
                 tree_feat1=feat1,
                 tree_feat2=feat2,
                 run_pick_best=False,
+                run_parallel=args.part2_parallel,
+                parallel_n=p2_n,
             )
             first = False
+            pct_after = 100.0 * i_triplet / n_pairs_p2 if n_pairs_p2 else 100.0
+            print(
+                f"  [RP Part 2] Triplet {i_triplet}/{n_pairs_p2} done — "
+                f"{pct_after:.1f}% through triplet list"
+            )
 
     if args.pick_best and not args.part1_only:
         from part_3_metrics_collection.pick_best_lambda import (
