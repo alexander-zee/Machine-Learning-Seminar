@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 ROOT_DIR      = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT_DIR / 'part_2_ap_pruning'))
+sys.path.insert(0, str(ROOT_DIR))
 
 FILTERED_CSV  = ROOT_DIR / "paper_data" / "tree_portfolio_quantile" / "LME_OP_Investment" / "level_all_excess_combined_filtered.csv"
 R_RESULTS_DIR = ROOT_DIR / "paper_data" / "TreeGridSearch" / "LME_OP_Investment"
@@ -46,7 +46,9 @@ def selected_return_series(result_df, k, filtered_returns):
 
 
 def run_ap_pruning():
-    from AP_Pruning import AP_Pruning
+    from part_2_AP_pruning.AP_Pruning import AP_Pruning
+    from part_2_AP_pruning.kernels.uniform import UniformKernel
+
     tmpdir = Path(tempfile.mkdtemp())
     triplet_dir = tmpdir / "LME_OP_Investment"
     triplet_dir.mkdir()
@@ -60,8 +62,10 @@ def run_ap_pruning():
         n_train_valid=N_TRAIN_VALID, cvN=CVN, runFullCV=False,
         kmin=KMIN, kmax=KMAX, RunParallel=False,
         IsTree=True, lambda0=LAMBDA0, lambda2=LAMBDA2,
+        kernel_cls=UniformKernel,
     )
-    return tmpdir / "LME_OP_Investment"
+    # AP_Pruning adds kernel name subfolder internally -> tmpdir/uniform/LME_OP_Investment
+    return tmpdir / "uniform" / "LME_OP_Investment"
 
 
 def main():
@@ -76,9 +80,12 @@ def main():
 
     for i, l0 in enumerate(LAMBDA0, 1):
         for j, l2 in enumerate(LAMBDA2, 1):
-            fname = f"results_full_l0_{i}_l2_{j}.csv"
-            our = pd.read_csv(our_dir        / fname)
-            r   = pd.read_csv(R_RESULTS_DIR  / fname)
+            # Our files now have _h_1 suffix; R files use the original naming
+            our_fname = f"results_full_l0_{i}_l2_{j}_h_1.csv"
+            r_fname   = f"results_full_l0_{i}_l2_{j}.csv"
+
+            our = pd.read_csv(our_dir       / our_fname)
+            r   = pd.read_csv(R_RESULTS_DIR / r_fname)
 
             common_k = sorted(set(our['portsN']) & set(r['portsN']))
 
@@ -107,9 +114,8 @@ def main():
     print("\n" + "="*70)
     print("Done.")
 
-    # Cleanup
     import shutil as _shutil
-    _shutil.rmtree(our_dir.parent, ignore_errors=True)
+    _shutil.rmtree(our_dir.parent.parent, ignore_errors=True)
 
 
 if __name__ == "__main__":

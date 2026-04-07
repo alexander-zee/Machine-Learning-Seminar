@@ -13,6 +13,7 @@ from part_1_portfolio_creation.tree_portfolio_creation.step4_filter_portfolios i
 
 # AP‑Pruning and metric collection modules
 from part_2_AP_pruning.AP_Pruning import AP_Pruning
+<<<<<<< HEAD
 from part_2_AP_pruning.RP_Pruning import RP_Pruning
 from part_2_AP_pruning.Mice_RP_Pruning import Mice_RP_Pruning
 from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n, get_mu_sigma
@@ -20,6 +21,15 @@ from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lamb
 from part_3_metrics_collection.ff5 import evaluate_master_portfolio
 from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
 # Configuration — λ grid (BPZ-style shrinkage). Middle ground: 5×4 = 20 combos (~2× the old 3×3).
+=======
+from part_2_AP_pruning.kernels.uniform import UniformKernel
+from part_2_AP_pruning.kernels.gaussian import GaussianKernel
+from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
+
+import pandas as pd
+
+# Configuration (same as in R for the demonstration)
+>>>>>>> f2ac003 (inital kernel setup)
 FEAT1 = 'OP'
 FEAT2 = 'Investment'
 # λ0: return shrinkage (eigen reformulation); centered on the R demo, slightly wider toward 0.4.
@@ -81,6 +91,7 @@ if __name__ == "__main__":
 
     #print("\n=== STEP 5: AP‑Pruning Grid Search ===")
     # The filtered output from step4 is used as input for AP pruning
+<<<<<<< HEAD
     #AP_Pruning(
     #    feat1=FEAT1,
     #    feat2=FEAT2,
@@ -98,6 +109,42 @@ if __name__ == "__main__":
     #    lambda0=LAMBDA0,
     #    lambda2=LAMBDA2
     #)
+=======
+     # --- Baseline: uniform kernel (original behavior) ---
+    # --- Baseline: uniform kernel (original behavior) ---
+    # Results -> data/results/grid_search/tree/uniform/LME_OP_Investment/
+    AP_Pruning(
+        feat1=FEAT1,
+        feat2=FEAT2,
+        input_path=Path('data/results/tree_portfolios'),
+        input_file_name='level_all_excess_combined_filtered.csv',
+        output_path=Path('data/results/grid_search/tree'),
+        n_train_valid=360, cvN=3, runFullCV=False,
+        kmin=K_MIN, kmax=K_MAX,
+        RunParallel=False, ParallelN=10, IsTree=True,
+        lambda0=LAMBDA0, lambda2=LAMBDA2,
+        kernel_cls=UniformKernel,
+    )
+ 
+    # --- Gaussian kernel (svar state variable) ---
+    # Results -> data/results/grid_search/tree/gaussian/LME_OP_Investment/
+    # TODO: build monthly state variable file and uncomment
+    # state = pd.read_csv('data/state_variables.csv',
+    #                     index_col='date', parse_dates=True)['svar']
+    # AP_Pruning(
+    #     feat1=FEAT1,
+    #     feat2=FEAT2,
+    #     input_path=Path('data/results/tree_portfolios'),
+    #     input_file_name='level_all_excess_combined_filtered.csv',
+    #     output_path=Path('data/results/grid_search/tree'),
+    #     n_train_valid=360, cvN=3, runFullCV=False,
+    #     kmin=K_MIN, kmax=K_MAX,
+    #     RunParallel=False, ParallelN=10, IsTree=True,
+    #     lambda0=LAMBDA0, lambda2=LAMBDA2,
+    #     kernel_cls=GaussianKernel,
+    #     state=state,
+    # )
+>>>>>>> f2ac003 (inital kernel setup)
 
     print("\n=== STEP 6: Pick Best Lambda (for k = 10) ===")
     # This will generate the files Selected_Ports_10.csv, etc.
