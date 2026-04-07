@@ -92,9 +92,9 @@ def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
     """
     Find best (lambda0, lambda2, h) at fixed portfolio count port_n.
 
-    Reads SR-only CSVs from the kernel subfolder.
-    Returns the best (i_best, j_best, h_best) indices and SRs.
-    Does NOT extract betas — call kernel_reconstruct separately.
+    Reads validation-only CSVs from the kernel subfolder.
+    Returns the best (i_best, j_best, h_best) indices and validation SR.
+    test_SR is not available yet — call kernel_full_fit for the winner.
 
     Parameters
     ----------
@@ -104,25 +104,19 @@ def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
     Returns
     -------
     dict with keys:
-        'best_idx'  : (i_best, j_best, h_best) — 0-indexed
-        'train_SR'  : float (from full fit)
-        'valid_SR'  : float (from cv fold)
-        'test_SR'   : float (from full fit)
+        'best_idx'     : (i_best, j_best, h_best) — 0-indexed
+        'valid_SR'     : float (from cv fold)
         'all_valid_SR' : 3D array (n_l0, n_l2, n_h) of validation SRs
-        'all_test_SR'  : 3D array (n_l0, n_l2, n_h) of test SRs
     """
     subdir = '_'.join(['LME', feat1, feat2])
     base = ap_prune_result_path / kernel_name / subdir
     n_l0, n_l2, n_h = len(lambda0), len(lambda2), n_bandwidths
 
     valid_SR = np.full((n_l0, n_l2, n_h), np.nan)
-    test_SR  = np.full((n_l0, n_l2, n_h), np.nan)
-    train_SR = np.full((n_l0, n_l2, n_h), np.nan)
 
     for i in range(n_l0):
         for j in range(n_l2):
             for h in range(n_h):
-                # CV fold for valid_SR
                 cv_path = base / f'results_cv_3_l0_{i+1}_l2_{j+1}_h_{h+1}.csv'
                 if not cv_path.exists():
                     continue
@@ -142,17 +136,6 @@ def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
                                 valid_SR[i, j, h] += fold_match.iloc[0]['valid_SR']
                     valid_SR[i, j, h] /= 3.0
 
-                # Full fit for test_SR
-                full_path = base / f'results_full_l0_{i+1}_l2_{j+1}_h_{h+1}.csv'
-                if not full_path.exists():
-                    continue
-                full_data = pd.read_csv(full_path)
-                full_match = full_data[full_data['portsN'] == port_n]
-                if len(full_match) == 0:
-                    continue
-                test_SR[i, j, h]  = full_match.iloc[0]['test_SR']
-                train_SR[i, j, h] = full_match.iloc[0].get('train_SR', np.nan)
-
     # Find best by validation SR (ignoring NaN)
     valid_SR_flat = np.where(np.isnan(valid_SR), -np.inf, valid_SR)
     best_flat = np.argmax(valid_SR_flat)
@@ -160,15 +143,11 @@ def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
 
     result = {
         'best_idx':     (int(i_best), int(j_best), int(h_best)),
-        'train_SR':     float(train_SR[i_best, j_best, h_best]),
         'valid_SR':     float(valid_SR[i_best, j_best, h_best]),
-        'test_SR':      float(test_SR[i_best, j_best, h_best]),
         'all_valid_SR': valid_SR,
-        'all_test_SR':  test_SR,
     }
 
     if write_table:
-        # Save the full 3D grids as flattened CSVs for inspection
         rows = []
         for i in range(n_l0):
             for j in range(n_l2):
@@ -176,15 +155,12 @@ def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
                     rows.append({
                         'l0_idx': i+1, 'l2_idx': j+1, 'h_idx': h+1,
                         'valid_SR': valid_SR[i, j, h],
-                        'test_SR':  test_SR[i, j, h],
-                        'train_SR': train_SR[i, j, h],
                     })
         pd.DataFrame(rows).to_csv(
             base / f'SR_grid_{port_n}.csv', index=False)
 
     print(f"  Best for k={port_n}: l0_idx={i_best+1}, l2_idx={j_best+1}, "
-          f"h_idx={h_best+1} -> valid_SR={result['valid_SR']:.4f}, "
-          f"test_SR={result['test_SR']:.4f}")
+          f"h_idx={h_best+1} -> valid_SR={result['valid_SR']:.4f}")
 
     return result
 
