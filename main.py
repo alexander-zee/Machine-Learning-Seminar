@@ -17,7 +17,8 @@ from part_2_AP_pruning.RP_Pruning import RP_Pruning
 from part_2_AP_pruning.Mice_RP_Pruning import Mice_RP_Pruning
 from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n, get_mu_sigma
 from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lambda, mice_pick_sr_n, mice_get_mu_sigma
-
+from part_3_metrics_collection.ff5 import evaluate_master_portfolio
+from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
 # Configuration (same as in R for the demonstration)
 FEAT1 = 'OP'
 FEAT2 = 'Investment'
@@ -124,6 +125,19 @@ if __name__ == "__main__":
     # Verify test SR matches what was saved in step 6D
     print(f"Cross-check: saved test_SR={best_sr[2]:.4f}  recomputed={stats_tree['test']['SR']:.4f}  match={abs(best_sr[2] - stats_tree['test']['SR']) < 1e-8}")
 
+    print("\n=== STEP 8: Fama-French Regression ===")
+    alpha, pval = evaluate_master_portfolio(
+        feat1         = FEAT1,
+        feat2         = FEAT2,
+        k             = PORT_N,
+        grid_dir      = Path('data/results/grid_search/tree'),
+        ports_dir     = Path('data/results/tree_portfolios'),
+        file_name     = 'level_all_excess_combined_filtered.csv',
+        n_train_valid = 360,
+    )
+    if alpha is not None:
+        print(f"FF5 Alpha={alpha:.6f}  p={pval:.4f}")
+
     #print("\n=== STEP 7: Collect SR_N for k = 5..50 ===")
     #pick_sr_n(
     #    feat1=FEAT1,
@@ -218,7 +232,16 @@ if __name__ == "__main__":
     #)
 
     #print("\n=== STEP 2D: Mice RP Tree Portfolios ===")
-    #create_mice_rp_tree_portfolio(n_features_per_split=N_FEATURES_PER_SPLIT, all_features=ALL_FEATURES)
+    #RP Best SR for k=10: train=1.2016, valid=0.7168, test=0.7655 (voor 9 features per split)
+    #RP Best SR for k=10: train=1.0671, valid=0.5561, test=0.5361 (voor 8 features per split)
+    #RP Best SR for k=10: train=1.3932, valid=1.3822, test=0.8348 (voor 7 features per split)
+    #RP Best SR for k=10: train=1.3400, valid=0.6959, test=0.8365 (voor 6 features per split)
+    #RP Best SR for k=10: train=1.2770, valid=0.7298, test=0.6739 (voor 5 features per split)
+    #RP Best SR for k=10: train=1.3481, valid=0.8302, test=0.8917 (voor 4 features per split)
+    #RP Best SR for k=10: train=1.1601, valid=0.6736, test=0.9429 (voor 3 features per split)
+    #RP Best SR for k=10: train=1.4803, valid=0.9710, test=0.8555 (voor 2 features per split)
+    #RP Best SR for k=10: train=1.4314, valid=1.2254, test=0.8283 (vppr 1 feature per split)
+    #create_mice_rp_tree_portfolio(n_features_per_split=7, all_features=ALL_FEATURES)
 
     #print("\n=== STEP 3D: Combine Mice RP Trees ===")
     #combine_mice_rp_trees(all_features=ALL_FEATURES)
@@ -265,14 +288,27 @@ if __name__ == "__main__":
     # Verify test SR matches what was saved in step 6D
     print(f"Cross-check: saved test_SR={best_sr_mice_rp[2]:.4f}  recomputed={stats_mice_rp['test']['SR']:.4f}  match={abs(best_sr_mice_rp[2] - stats_mice_rp['test']['SR']) < 1e-8}")
 
-    print("\n=== STEP 7D: Collect SR_N for RP Trees (k=5..50) ===")
-    #mice_pick_sr_n(allfeatures=ALL_FEATURES, grid_search_path= Path('data/results/grid_search/mice_rp_tree'),
-    #    mink            = K_MIN,
-    #    maxk            = K_MAX,
-    #    lambda0         = LAMBDA0,
-    #    lambda2         = LAMBDA2,
-    #    port_path       = Path('data/results/mice_rp_tree_portfolios'),
-    #    port_file_name  = 'level_all_excess_combined.csv'
-    #)   
+    #print("\n=== STEP 7D: Collect SR_N for RP Trees (k=5..50) ===")
+    mice_pick_sr_n(allfeatures=ALL_FEATURES, grid_search_path= Path('data/results/grid_search/mice_rp_tree'),
+        mink            = K_MIN,
+        maxk            = K_MAX,
+        lambda0         = LAMBDA0,
+        lambda2         = LAMBDA2,
+        port_path       = Path('data/results/mice_rp_tree_portfolios'),
+        port_file_name  = 'level_all_excess_combined.csv'
+    )
+
+    print("\n=== STEP 8D cont.: FF5 Alpha for k=10 (test window) ===")
+    for k in range(5, 51):
+        alpha, pval = mice_evaluate_master_portfolio(
+            allfeatures   = ALL_FEATURES,
+            k             = k,
+            grid_dir      = Path('data/results/grid_search/mice_rp_tree'),
+            ports_dir     = Path('data/results/mice_rp_tree_portfolios'),
+            file_name     = 'level_all_excess_combined.csv',
+            n_train_valid = 360,
+        )
+        if alpha is not None:
+            print(f"FF5 Alpha={alpha:.6f}  p={pval:.4f}")
 
     print("\nPipeline complete. All results stored under data/results/")
