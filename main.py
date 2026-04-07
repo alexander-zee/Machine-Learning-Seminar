@@ -103,10 +103,10 @@ if __name__ == "__main__":
 =======
     
     #Create the state variable which we want, which is in long format. Create the csv, and query from it. 
-    build_state_variables(
-        final_dataset_path=Path('data/raw/FinalDataset.csv'),
-        output_path=Path('data/state_variables.csv'),
-    )
+    #build_state_variables(
+    #    final_dataset_path=Path('data/raw/FinalDataset.csv'),
+    #    output_path=Path('data/state_variables.csv'),
+    #)
 
     state_df = pd.read_csv('data/state_variables.csv', index_col='MthCalDt', parse_dates=True)
     state    = state_df['svar']   # (636,) one value per month

@@ -1,9 +1,18 @@
 """
 pick_best_lambda.py — Select best hyperparameters from AP-Pruning grid search.
 
-pick_best_lambda : for a fixed k, find best (lambda0, lambda2) by validation
-                   Sharpe, extract weights from the full fit, save selected ports
-pick_sr_n        : sweep pick_best_lambda over k=mink..maxk, save SR_N.csv
+Supports both:
+    - Uniform kernel (original): 2D grid over (lambda0, lambda2), h_idx=1
+      Reads betas from full-fit CSV to extract selected portfolios.
+    - Non-uniform kernel: 3D grid over (lambda0, lambda2, h)
+      SR-only CSVs → select best combo → call kernel_reconstruct for betas.
+
+Functions
+---------
+pick_best_lambda        : original interface, uniform kernel (unchanged logic)
+pick_best_lambda_kernel : 3D grid search for kernel case
+pick_sr_n               : sweep over k, auto-routes to uniform or kernel
+pick_sr_n_kernel        : sweep over k for kernel case
 """
 
 from __future__ import annotations
@@ -13,18 +22,18 @@ import pandas as pd
 from pathlib import Path
 
 
+# ---------------------------------------------------------------------------
+# Uniform kernel (original, unchanged logic)
+# ---------------------------------------------------------------------------
+
 def pick_best_lambda(feat1, feat2, ap_prune_result_path, port_n, lambda0, lambda2,
                      portfolio_path, port_name, full_cv=False, write_table=True):
     """
     Find best (lambda0, lambda2) at fixed portfolio count port_n.
-    Input  : feat1/feat2 strings, result path, port_n (fixed k), lambda grids,
-             portfolio_path to original filtered CSV, full_cv to average all folds.
-    Output : returns np.ndarray [train_SR, valid_SR, test_SR] for the best combo.
-             If write_table=True, also saves SR matrices and Selected_Ports_{k}.csv
-             and Selected_Ports_Weights_{k}.csv to the triplet result folder.
+    Reads from the uniform/ subfolder. h_idx is always 1.
     """
     subdir = '_'.join(['LME', feat1, feat2])
-    base = ap_prune_result_path / subdir
+    base = ap_prune_result_path / 'uniform' / subdir
     n_l0, n_l2 = len(lambda0), len(lambda2)
 
     train_SR = np.zeros((n_l0, n_l2))
@@ -33,8 +42,8 @@ def pick_best_lambda(feat1, feat2, ap_prune_result_path, port_n, lambda0, lambda
 
     for i in range(n_l0):
         for j in range(n_l2):
-            full_data = pd.read_csv(base / f'results_full_l0_{i+1}_l2_{j+1}.csv')
-            cv_data   = pd.read_csv(base / f'results_cv_3_l0_{i+1}_l2_{j+1}.csv')
+            full_data = pd.read_csv(base / f'results_full_l0_{i+1}_l2_{j+1}_h_1.csv')
+            cv_data   = pd.read_csv(base / f'results_cv_3_l0_{i+1}_l2_{j+1}_h_1.csv')
             full_row  = full_data[full_data['portsN'] == port_n].iloc[0]
             cv_row    = cv_data[cv_data['portsN']     == port_n].iloc[0]
 
@@ -44,16 +53,18 @@ def pick_best_lambda(feat1, feat2, ap_prune_result_path, port_n, lambda0, lambda
 
             if full_cv:
                 for fold in [1, 2]:
-                    fold_data = pd.read_csv(base / f'results_cv_{fold}_l0_{i+1}_l2_{j+1}.csv')
+                    fold_data = pd.read_csv(base / f'results_cv_{fold}_l0_{i+1}_l2_{j+1}_h_1.csv')
                     valid_SR[i, j] += fold_data[fold_data['portsN'] == port_n].iloc[0]['valid_SR']
                 valid_SR[i, j] /= 3.0
 
     i_best, j_best = np.unravel_index(np.argmax(valid_SR), valid_SR.shape)
 
     # Extract weights from full fit for winning (lambda0, lambda2)
-    full_data = pd.read_csv(base / f'results_full_l0_{i_best+1}_l2_{j_best+1}.csv')
+    full_data = pd.read_csv(base / f'results_full_l0_{i_best+1}_l2_{j_best+1}_h_1.csv')
     best_row  = full_data[full_data['portsN'] == port_n].iloc[0]
     meta_cols = ['train_SR', 'test_SR', 'portsN']
+    if 'valid_SR' in full_data.columns:
+        meta_cols.append('valid_SR')
     weights   = best_row[[c for c in full_data.columns if c not in meta_cols]].values.astype(float)
 
     nonzero_mask = weights != 0
@@ -70,16 +81,126 @@ def pick_best_lambda(feat1, feat2, ap_prune_result_path, port_n, lambda0, lambda
     return np.array([train_SR[i_best, j_best], valid_SR[i_best, j_best], test_SR[i_best, j_best]])
 
 
-def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2, port_path, port_file_name):
+# ---------------------------------------------------------------------------
+# Kernel case: 3D grid search over (lambda0, lambda2, h)
+# ---------------------------------------------------------------------------
+
+def pick_best_lambda_kernel(feat1, feat2, ap_prune_result_path, port_n,
+                            lambda0, lambda2, n_bandwidths,
+                            kernel_name='gaussian',
+                            full_cv=False, write_table=True):
     """
-    Collect best [train_SR, valid_SR, test_SR] for every k from mink to maxk.
-    Input  : feat1/feat2 strings, grid_search_path, k range, lambda grids,
-             port_path to original filtered CSV.
-    Output : saves SR_N.csv to grid_search_path/LME_feat1_feat2/ —
-             3 rows (train/valid/test) x (maxk-mink+1) columns, one per k.
-             For each k the best (lambda0, lambda2) is selected independently.
+    Find best (lambda0, lambda2, h) at fixed portfolio count port_n.
+
+    Reads SR-only CSVs from the kernel subfolder.
+    Returns the best (i_best, j_best, h_best) indices and SRs.
+    Does NOT extract betas — call kernel_reconstruct separately.
+
+    Parameters
+    ----------
+    n_bandwidths : int — number of bandwidth candidates (len of bandwidth_grid)
+    kernel_name  : str — subfolder name, e.g. 'gaussian'
+
+    Returns
+    -------
+    dict with keys:
+        'best_idx'  : (i_best, j_best, h_best) — 0-indexed
+        'train_SR'  : float (from full fit)
+        'valid_SR'  : float (from cv fold)
+        'test_SR'   : float (from full fit)
+        'all_valid_SR' : 3D array (n_l0, n_l2, n_h) of validation SRs
+        'all_test_SR'  : 3D array (n_l0, n_l2, n_h) of test SRs
     """
     subdir = '_'.join(['LME', feat1, feat2])
+    base = ap_prune_result_path / kernel_name / subdir
+    n_l0, n_l2, n_h = len(lambda0), len(lambda2), n_bandwidths
+
+    valid_SR = np.full((n_l0, n_l2, n_h), np.nan)
+    test_SR  = np.full((n_l0, n_l2, n_h), np.nan)
+    train_SR = np.full((n_l0, n_l2, n_h), np.nan)
+
+    for i in range(n_l0):
+        for j in range(n_l2):
+            for h in range(n_h):
+                # CV fold for valid_SR
+                cv_path = base / f'results_cv_3_l0_{i+1}_l2_{j+1}_h_{h+1}.csv'
+                if not cv_path.exists():
+                    continue
+                cv_data = pd.read_csv(cv_path)
+                cv_match = cv_data[cv_data['portsN'] == port_n]
+                if len(cv_match) == 0:
+                    continue
+                valid_SR[i, j, h] = cv_match.iloc[0]['valid_SR']
+
+                if full_cv:
+                    for fold in [1, 2]:
+                        fold_path = base / f'results_cv_{fold}_l0_{i+1}_l2_{j+1}_h_{h+1}.csv'
+                        if fold_path.exists():
+                            fold_data = pd.read_csv(fold_path)
+                            fold_match = fold_data[fold_data['portsN'] == port_n]
+                            if len(fold_match) > 0:
+                                valid_SR[i, j, h] += fold_match.iloc[0]['valid_SR']
+                    valid_SR[i, j, h] /= 3.0
+
+                # Full fit for test_SR
+                full_path = base / f'results_full_l0_{i+1}_l2_{j+1}_h_{h+1}.csv'
+                if not full_path.exists():
+                    continue
+                full_data = pd.read_csv(full_path)
+                full_match = full_data[full_data['portsN'] == port_n]
+                if len(full_match) == 0:
+                    continue
+                test_SR[i, j, h]  = full_match.iloc[0]['test_SR']
+                train_SR[i, j, h] = full_match.iloc[0].get('train_SR', np.nan)
+
+    # Find best by validation SR (ignoring NaN)
+    valid_SR_flat = np.where(np.isnan(valid_SR), -np.inf, valid_SR)
+    best_flat = np.argmax(valid_SR_flat)
+    i_best, j_best, h_best = np.unravel_index(best_flat, valid_SR.shape)
+
+    result = {
+        'best_idx':     (int(i_best), int(j_best), int(h_best)),
+        'train_SR':     float(train_SR[i_best, j_best, h_best]),
+        'valid_SR':     float(valid_SR[i_best, j_best, h_best]),
+        'test_SR':      float(test_SR[i_best, j_best, h_best]),
+        'all_valid_SR': valid_SR,
+        'all_test_SR':  test_SR,
+    }
+
+    if write_table:
+        # Save the full 3D grids as flattened CSVs for inspection
+        rows = []
+        for i in range(n_l0):
+            for j in range(n_l2):
+                for h in range(n_h):
+                    rows.append({
+                        'l0_idx': i+1, 'l2_idx': j+1, 'h_idx': h+1,
+                        'valid_SR': valid_SR[i, j, h],
+                        'test_SR':  test_SR[i, j, h],
+                        'train_SR': train_SR[i, j, h],
+                    })
+        pd.DataFrame(rows).to_csv(
+            base / f'SR_grid_{port_n}.csv', index=False)
+
+    print(f"  Best for k={port_n}: l0_idx={i_best+1}, l2_idx={j_best+1}, "
+          f"h_idx={h_best+1} -> valid_SR={result['valid_SR']:.4f}, "
+          f"test_SR={result['test_SR']:.4f}")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# SR_N collection: sweep over k
+# ---------------------------------------------------------------------------
+
+def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2,
+              port_path, port_file_name):
+    """
+    Collect best [train_SR, valid_SR, test_SR] for every k from mink to maxk.
+    Uniform kernel version — reads from uniform/ subfolder.
+    """
+    subdir = '_'.join(['LME', feat1, feat2])
+    base = grid_search_path / 'uniform' / subdir
     sr_n = None
     for k in range(mink, maxk + 1):
         print(f"  k={k}")
@@ -96,7 +217,42 @@ def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2, port
         sr_n = sr.reshape(-1, 1) if sr_n is None else np.hstack([sr_n, sr.reshape(-1, 1)])
 
     pd.DataFrame(sr_n, index=['train_SR', 'valid_SR', 'test_SR']).to_csv(
-        grid_search_path / subdir / 'SR_N.csv', index=True)
+        base / 'SR_N.csv', index=True)
+
+
+def pick_sr_n_kernel(feat1, feat2, grid_search_path, mink, maxk,
+                     lambda0, lambda2, n_bandwidths,
+                     kernel_name='gaussian', full_cv=False):
+    """
+    Collect best [valid_SR, test_SR] for every k from mink to maxk.
+    Kernel version — reads from kernel subfolder, searches over h too.
+    """
+    subdir = '_'.join(['LME', feat1, feat2])
+    base = grid_search_path / kernel_name / subdir
+
+    rows = []
+    for k in range(mink, maxk + 1):
+        print(f"  k={k}")
+        res = pick_best_lambda_kernel(
+            feat1, feat2, grid_search_path, k,
+            lambda0, lambda2, n_bandwidths,
+            kernel_name=kernel_name, full_cv=full_cv, write_table=False)
+
+        i_b, j_b, h_b = res['best_idx']
+        rows.append({
+            'k':        k,
+            'valid_SR': res['valid_SR'],
+            'test_SR':  res['test_SR'],
+            'train_SR': res['train_SR'],
+            'l0_idx':   i_b + 1,
+            'l2_idx':   j_b + 1,
+            'h_idx':    h_b + 1,
+        })
+
+    sr_df = pd.DataFrame(rows)
+    sr_df.to_csv(base / 'SR_N.csv', index=False)
+    print(f"  SR_N saved to {base / 'SR_N.csv'}")
+    return sr_df
 
 def get_mu_sigma(feat1, feat2, ap_prune_result_path, portfolio_path,
                       port_name, port_n, n_train_valid=360):
@@ -207,9 +363,19 @@ if __name__ == '__main__':
     L0 = [0.5, 0.55, 0.6]
     L2 = [10**-7, 10**-7.25, 10**-7.5]
 
+    # Uniform
     result = pick_best_lambda('OP', 'Investment', GRID, 10, L0, L2, PORTS,
                               'level_all_excess_combined_filtered.csv')
-    print(f"k=10: train={result[0]:.4f}, valid={result[1]:.4f}, test={result[2]:.4f}")
+    print(f"Uniform k=10: train={result[0]:.4f}, valid={result[1]:.4f}, test={result[2]:.4f}")
 
     pick_sr_n('OP', 'Investment', GRID, 5, 50, L0, L2, PORTS,
               'level_all_excess_combined_filtered.csv')
+
+    # Gaussian (7 bandwidth candidates)
+    res_kernel = pick_best_lambda_kernel('OP', 'Investment', GRID, 10,
+                                         L0, L2, n_bandwidths=7,
+                                         kernel_name='gaussian')
+    print(f"Gaussian k=10: valid={res_kernel['valid_SR']:.4f}, test={res_kernel['test_SR']:.4f}")
+
+    pick_sr_n_kernel('OP', 'Investment', GRID, 5, 50, L0, L2,
+                     n_bandwidths=7, kernel_name='gaussian')
