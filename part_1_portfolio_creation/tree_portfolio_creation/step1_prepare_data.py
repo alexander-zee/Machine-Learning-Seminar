@@ -180,6 +180,28 @@ def prepare_data():
     print("\nMissing values per characteristic:")
     print(df[CHARACTERISTICS].isna().sum())
 
+def build_state_variables(
+    final_dataset_path: Path,
+    output_path: Path,
+    date_col: str = 'MthCalDt',
+    state_cols: list = ['svar', 'DEF', 'TMS']
+):
+    """
+    Extract monthly state variables from the long-format FinalDataset.csv.
+    Deduplicates on date — all stocks share the same macro value per month.
+    
+    Saves a small CSV: date + state_cols, one row per month.
+    """
+    df = pd.read_csv(final_dataset_path, usecols=[date_col] + state_cols)
+    
+    # Deduplicate — any row per month is fine since values are identical
+    monthly = df.drop_duplicates(subset=date_col).sort_values(date_col)
+    monthly = monthly.reset_index(drop=True)
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    monthly.to_csv(output_path, index=False)
+    print(f"Saved {len(monthly)} monthly observations to {output_path}")
+    return monthly
 
 if __name__ == '__main__':
     prepare_data()

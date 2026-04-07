@@ -1,7 +1,12 @@
 from pathlib import Path
 # Importeer je nieuwe imputatie script
+<<<<<<< HEAD
 from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data
 #from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
+=======
+from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data, build_state_variables
+from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
+>>>>>>> 55b06fc (state variable)
 from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import create_tree_portfolio
 from part_1_portfolio_creation.tree_portfolio_creation.step2_RP_tree_portfolios import create_rp_tree_portfolio
 from part_1_portfolio_creation.tree_portfolio_creation.step2_cluster_portfolios import create_cluster_portfolios
@@ -82,14 +87,34 @@ if __name__ == "__main__":
     #    tree_out=Path('data/results/tree_portfolios')
     #)
 
+<<<<<<< HEAD
     #print("\n=== STEP 4: Filter Single‑Sorted Portfolios ===")
+=======
+    print("\n=== STEP 4: Filter Single‑Sorted Portfolios ===")
+>>>>>>> 55b06fc (state variable)
     #filter_tree_ports(
     #    feat1=FEAT1,
     #    feat2=FEAT2,
     #    tree_out=Path('data/results/tree_portfolios')
     #)
+<<<<<<< HEAD
 
     #print("\n=== STEP 5: AP‑Pruning Grid Search ===")
+=======
+    
+    #Create the state variable which we want, which is in long format. Create the csv, and query from it. 
+    build_state_variables(
+        final_dataset_path=Path('data/raw/FinalDataset.csv'),
+        output_path=Path('data/state_variables.csv'),
+    )
+
+    state_df = pd.read_csv('data/state_variables.csv', index_col='MthCalDt', parse_dates=True)
+    state    = state_df['svar']   # (636,) one value per month
+
+
+    print(state)
+    print("\n=== STEP 5: AP‑Pruning Grid Search ===")
+>>>>>>> 55b06fc (state variable)
     # The filtered output from step4 is used as input for AP pruning
 <<<<<<< HEAD
     #AP_Pruning(
@@ -123,7 +148,8 @@ if __name__ == "__main__":
         kmin=K_MIN, kmax=K_MAX,
         RunParallel=False, ParallelN=10, IsTree=True,
         lambda0=LAMBDA0, lambda2=LAMBDA2,
-        kernel_cls=UniformKernel,
+        kernel_cls=GaussianKernel,
+        state = state
     )
  
     # --- Gaussian kernel (svar state variable) ---
@@ -364,3 +390,4 @@ if __name__ == "__main__":
             print(f"FF5 Alpha={alpha:.6f}  p={pval:.4f}")
 
     print("\nPipeline complete. All results stored under data/results/")
+
