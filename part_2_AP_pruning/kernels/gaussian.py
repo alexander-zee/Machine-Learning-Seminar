@@ -21,6 +21,7 @@ class GaussianKernel(BaseKernel):
 
     # Multipliers of sigma_S to search over, following Kim & Oh (2025)
     # who search h in [0.05*sigma_S, 5*sigma_S]
+    #TODO functie maken om dit te vullen naar onze svar waarders.
     default_multipliers = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0]
 
     def __init__(self, h: float):
