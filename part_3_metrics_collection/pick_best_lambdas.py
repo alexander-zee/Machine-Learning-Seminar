@@ -6,6 +6,8 @@ pick_best_lambda : for a fixed k, find best (lambda0, lambda2) by validation
 pick_sr_n        : sweep pick_best_lambda over k=mink..maxk, save SR_N.csv
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -130,6 +132,73 @@ def get_mu_sigma(feat1, feat2, ap_prune_result_path, portfolio_path,
             'SR':    sdf_test.mean() / sdf_test.std(ddof=1),
         },
     }
+
+
+def run_rp_picks_all(
+    port_n: int = 10,
+    grid_search_path: Path | str | None = None,
+    portfolio_path: Path | str | None = None,
+    port_name: str = "level_all_excess_combined.csv",
+    lambda0: list | None = None,
+    lambda2: list | None = None,
+    full_cv: bool = False,
+    write_table: bool = True,
+) -> list[dict]:
+    """
+    Run ``pick_best_lambda`` for every cross-section that has RP Part~2 grid outputs.
+
+    Expects the ``main`` layout: ``grid_search_path/LME_feat_feat/`` with
+    ``results_full_*.csv``, and matching ``portfolio_path/LME_feat_feat/port_name``.
+    """
+    from part_1_portfolio_creation.tree_portfolio_creation.cross_section_triplets import (
+        all_triplet_pairs,
+        triplet_subdir_name,
+    )
+
+    grid = Path(grid_search_path) if grid_search_path is not None else Path("data/results/grid_search/rp_tree")
+    ports_root = Path(portfolio_path) if portfolio_path is not None else Path("data/results/rp_tree_portfolios")
+    if lambda0 is None:
+        lambda0 = [0.5, 0.55, 0.6]
+    if lambda2 is None:
+        lambda2 = [10**-7, 10**-7.25, 10**-7.5]
+
+    out: list[dict] = []
+    for feat1, feat2 in all_triplet_pairs():
+        sub = triplet_subdir_name(feat1, feat2)
+        base = grid / sub
+        if not (base / "results_full_l0_1_l2_1.csv").is_file():
+            continue
+        rp_csv = ports_root / sub / port_name
+        if not rp_csv.is_file():
+            print(f"  skip {sub}: missing {rp_csv}")
+            continue
+        print(f"pick_best_lambda (RP): {sub}, port_n={port_n}")
+        try:
+            sr = pick_best_lambda(
+                feat1,
+                feat2,
+                grid,
+                port_n,
+                lambda0,
+                lambda2,
+                ports_root,
+                port_name,
+                full_cv=full_cv,
+                write_table=write_table,
+            )
+            out.append(
+                {
+                    "feat1": feat1,
+                    "feat2": feat2,
+                    "subdir": sub,
+                    "train_SR": float(sr[0]),
+                    "valid_SR": float(sr[1]),
+                    "test_SR": float(sr[2]),
+                }
+            )
+        except Exception as e:
+            print(f"  skipped {sub}: {e}")
+    return out
 
 
 if __name__ == '__main__':
