@@ -5,7 +5,7 @@ Supports both:
     - Uniform kernel (original): 2D grid over (lambda0, lambda2), h_idx=1
       Reads betas from full-fit CSV to extract selected portfolios.
     - Non-uniform kernel: 3D grid over (lambda0, lambda2, h)
-      SR-only CSVs → select best combo → call kernel_reconstruct for betas.
+      SR-only CSVs → select best combo → call kernel_full_fit for the winner.
 
 Functions
 ---------
@@ -196,39 +196,7 @@ def pick_sr_n(feat1, feat2, grid_search_path, mink, maxk, lambda0, lambda2,
         base / 'SR_N.csv', index=True)
 
 
-def pick_sr_n_kernel(feat1, feat2, grid_search_path, mink, maxk,
-                     lambda0, lambda2, n_bandwidths,
-                     kernel_name='gaussian', full_cv=False):
-    """
-    Collect best [valid_SR, test_SR] for every k from mink to maxk.
-    Kernel version — reads from kernel subfolder, searches over h too.
-    """
-    subdir = '_'.join(['LME', feat1, feat2])
-    base = grid_search_path / kernel_name / subdir
 
-    rows = []
-    for k in range(mink, maxk + 1):
-        print(f"  k={k}")
-        res = pick_best_lambda_kernel(
-            feat1, feat2, grid_search_path, k,
-            lambda0, lambda2, n_bandwidths,
-            kernel_name=kernel_name, full_cv=full_cv, write_table=False)
-
-        i_b, j_b, h_b = res['best_idx']
-        rows.append({
-            'k':        k,
-            'valid_SR': res['valid_SR'],
-            'test_SR':  res['test_SR'],
-            'train_SR': res['train_SR'],
-            'l0_idx':   i_b + 1,
-            'l2_idx':   j_b + 1,
-            'h_idx':    h_b + 1,
-        })
-
-    sr_df = pd.DataFrame(rows)
-    sr_df.to_csv(base / 'SR_N.csv', index=False)
-    print(f"  SR_N saved to {base / 'SR_N.csv'}")
-    return sr_df
 
 def get_mu_sigma(feat1, feat2, ap_prune_result_path, portfolio_path,
                       port_name, port_n, n_train_valid=360):
@@ -333,25 +301,3 @@ def run_rp_picks_all(
     return out
 
 
-if __name__ == '__main__':
-    GRID = Path('data/results/grid_search/tree')
-    PORTS = Path('data/results/tree_portfolios')
-    L0 = [0.5, 0.55, 0.6]
-    L2 = [10**-7, 10**-7.25, 10**-7.5]
-
-    # Uniform
-    result = pick_best_lambda('OP', 'Investment', GRID, 10, L0, L2, PORTS,
-                              'level_all_excess_combined_filtered.csv')
-    print(f"Uniform k=10: train={result[0]:.4f}, valid={result[1]:.4f}, test={result[2]:.4f}")
-
-    pick_sr_n('OP', 'Investment', GRID, 5, 50, L0, L2, PORTS,
-              'level_all_excess_combined_filtered.csv')
-
-    # Gaussian (7 bandwidth candidates)
-    res_kernel = pick_best_lambda_kernel('OP', 'Investment', GRID, 10,
-                                         L0, L2, n_bandwidths=7,
-                                         kernel_name='gaussian')
-    print(f"Gaussian k=10: valid={res_kernel['valid_SR']:.4f}, test={res_kernel['test_SR']:.4f}")
-
-    pick_sr_n_kernel('OP', 'Investment', GRID, 5, 50, L0, L2,
-                     n_bandwidths=7, kernel_name='gaussian')

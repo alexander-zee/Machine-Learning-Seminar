@@ -45,13 +45,6 @@ if __name__ == "__main__":
 
     # ─────────────────────────────────────────────────────────────────
     # Step 1: Grid search — validation only, no full fit
-    #
-    # For each bandwidth h (7 candidates):
-    #     For CV fold 3:
-    #         120 validation months × 9 (l0, l2) combos
-    #         → 9 CSVs with valid_SR per k
-    # Total: 7 × 120 = 840 per-month LARS calls
-    # Output: 63 CSVs in gaussian/LME_OP_Investment/
     # ─────────────────────────────────────────────────────────────────
     print("\n=== STEP 1: Gaussian Kernel Grid Search (validation only) ===")
     AP_Pruning(
@@ -97,54 +90,49 @@ if __name__ == "__main__":
     print(f"  Validation SR: {res['valid_SR']:.4f}")
 
     # ─────────────────────────────────────────────────────────────────
-    # Step 3: Full fit for the winning combo
+    # Step 3: Full fit for the winning (l0*, l2*, h*) at k=PORT_N
     #
-    # Runs 276 test months for just the one winning (l0*, l2*, h*).
-    # The resulting CSV has test_SR for ALL k values (5..50),
-    # so this single run covers any k you might want later.
+    # Runs T_test months using the winning hyperparameters selected for
+    # k=PORT_N specifically.  Only k=PORT_N weights are extracted and
+    # saved, giving:
+    #   full_fit_summary_k{PORT_N}.csv  — SR + hyperparameters (1 row)
+    #   full_fit_detail_k{PORT_N}.csv   — per-month weights & excess return
     # ─────────────────────────────────────────────────────────────────
-    print(f"\n=== STEP 3: Full Fit for Winning Combo ===")
+    print(f"\n=== STEP 3: Full Fit for k={PORT_N} ===")
 
     # Load the adj_ports (same preprocessing as AP_Pruning does internally)
-    subdir = f'LME_{FEAT1}_{FEAT2}'
-    ports  = pd.read_csv(TREE_PORT_PATH / subdir / PORT_FILE_NAME)
-    depths = np.array([len(col.split('.')[1]) - 1 for col in ports.columns])
-    adj_w  = 1.0 / np.sqrt(2.0 ** depths)
+    subdir    = f'LME_{FEAT1}_{FEAT2}'
+    ports     = pd.read_csv(TREE_PORT_PATH / subdir / PORT_FILE_NAME)
+    depths    = np.array([len(col.split('.')[1]) - 1 for col in ports.columns])
+    adj_w     = 1.0 / np.sqrt(2.0 ** depths)
     adj_ports = ports * adj_w
 
     # Instantiate the winning kernel
     kernel_star = GaussianKernel(h=bandwidths[h_best])
 
-    kernel_full_fit(
+    # Output directory for this run
+    full_fit_dir = GRID_SEARCH_PATH / 'gaussian' / subdir / 'full_fit'
+
+    result = kernel_full_fit(
         ports=adj_ports,
+        k_target=PORT_N,
         lambda0_star=LAMBDA0[i_best],
         lambda2_star=LAMBDA2[j_best],
-        main_dir=str(GRID_SEARCH_PATH / 'gaussian'),
-        sub_dir=subdir,
-        adj_w=adj_w,
         kernel=kernel_star,
-        h_idx=h_best + 1,
         state=state,
+        adj_w=adj_w,
+        output_dir=str(full_fit_dir),
         n_train_valid=360,
         kmin=K_MIN, kmax=K_MAX,
+        kernel_name='gaussian',
     )
 
     # ─────────────────────────────────────────────────────────────────
-    # Step 4: Read test_SR from the full fit
+    # Step 4: Show results
     # ─────────────────────────────────────────────────────────────────
     print(f"\n=== STEP 4: Results ===")
-    full_csv = (GRID_SEARCH_PATH / 'gaussian' / subdir /
-                f'results_full_l0_1_l2_1_h_{h_best+1}.csv')
-    full_data = pd.read_csv(full_csv)
-    print(full_data.to_string(index=False))
-
-    # Extract test_SR for the specific k we care about
-    row = full_data[full_data['portsN'] == PORT_N]
-    if len(row) > 0:
-        test_sr = row.iloc[0]['test_SR']
-        print(f"\n  k={PORT_N}: test_SR = {test_sr:.4f}")
-    else:
-        print(f"\n  k={PORT_N} not found in full fit results.")
-        print(f"  Available k values: {sorted(full_data['portsN'].tolist())}")
-
+    print(f"  k={PORT_N}  test_SR={result['test_SR']:.4f}  "
+          f"({result['months_used']}/{result['months_total']} test months used)")
+    print(f"  Summary CSV : {full_fit_dir}/full_fit_summary_k{PORT_N}.csv")
+    print(f"  Detail CSV  : {full_fit_dir}/full_fit_detail_k{PORT_N}.csv")
     print("\nDone.")

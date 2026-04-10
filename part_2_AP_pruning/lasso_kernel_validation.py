@@ -64,29 +64,6 @@ def kernel_cv_helper(ports_train, ports_valid, ports_test, lambda0, lambda2,
         print(f"    validation done — {n_combos} (l0,l2) combos, ~{n_k_example} k values each",
               flush=True)
 
-    # ---- Test loop ----
-    # Only run during full fit (ports_valid is None).
-    if ports_valid is None and state_test is not None:
-        _state_test    = np.asarray(state_test)
-        ports_test_arr = ports_test.values
-
-        for t in range(len(ports_test)):
-            if (t + 1) % 20 == 0 or t == 0:
-                print(f"    test month {t+1}/{len(ports_test)}", flush=True)
-
-            s       = float(_state_test[t])
-            monthly = one_month_lars(
-                ports_train_arr, _state_train, s, kernel,
-                lambda0, lambda2, adj_w, kmin, kmax)
-
-            for (i, j, k), sdf_w in monthly.items():
-                test_returns[(i, j)][k].append(float(ports_test_arr[t] @ sdf_w))
-
-        n_combos = len(test_returns)
-        n_k_example = len(next(iter(test_returns.values()))) if test_returns else 0
-        print(f"    test done — {n_combos} (l0,l2) combos, ~{n_k_example} k values each",
-              flush=True)
-
     # ---- Compute Sharpe ratios and save compact CSVs ----
     print(f"    computing Sharpe ratios and writing CSVs...", flush=True)
     for i in range(len(lambda0)):
