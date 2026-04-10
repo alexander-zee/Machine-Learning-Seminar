@@ -68,10 +68,9 @@ class GaussianKernel(BaseKernel):
         return [c * sigma_s for c in mults]
 
     @classmethod
-    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
-        """Compute sigma_s from the training window and build the h grid."""
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int, n=None):
         sigma_s = state.iloc[:n_train_valid].std()
-        return cls.bandwidth_grid(sigma_s)
+        return cls.bandwidth_grid(sigma_s, n=n)
 
     def __repr__(self):
         return f"GaussianKernel(h={self.h:.6f})"
