@@ -3,7 +3,7 @@ Step 3 (RP variant): Combine Trees — subtract rf, deduplicate, save combined m
  
 Adapted for the all-features RP tree setup from step2_RP_tree_portfolios.py:
   - Subdirectory is named after all features joined by '_'
-    (e.g. LME_BEME_r12_2_OP_Investment_ST_Rev_LT_Rev_AC_LTurnover)
+    (e.g. LME_..._LTurnover_IdioVol)
   - Tree IDs are zero-padded integers ('00', '01', ..., '80')
   - Min/max tables are saved for ALL features, not just three
   - Everything else (dedup, rf subtraction, output files) is unchanged
@@ -28,7 +28,7 @@ TREE_OUT    = Path('data/results/mice_rp_tree_portfolios')
  
 ALL_FEATURES = [
     'LME', 'BEME', 'r12_2', 'OP', 'Investment',
-    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover'
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
 ]
  
 _REPO_ROOT  = Path(__file__).resolve().parent.parent.parent

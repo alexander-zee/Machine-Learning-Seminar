@@ -19,15 +19,20 @@ from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_s
 from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lambda, mice_pick_sr_n, mice_get_mu_sigma
 from part_3_metrics_collection.ff5 import evaluate_master_portfolio
 from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
-# Configuration (same as in R for the demonstration)
+# Configuration — λ grid (BPZ-style shrinkage). Middle ground: 5×4 = 20 combos (~2× the old 3×3).
 FEAT1 = 'OP'
 FEAT2 = 'Investment'
-LAMBDA0 = [0.5, 0.55, 0.6]
-LAMBDA2 = [10**-7, 10**-7.25, 10**-7.5]
+# λ0: return shrinkage (eigen reformulation); centered on the R demo, slightly wider toward 0.4.
+LAMBDA0 = [0.4, 0.45, 0.5, 0.55, 0.6]
+# λ2: ridge in LARS block; log-spaced around ~1e-7 (within BPZ / AAP-tree literature range).
+LAMBDA2 = [10**-7.5, 10**-7.3, 10**-7.1, 10**-6.9]
 PORT_N = 10               # fixed k for best lambda selection
 K_MIN = 5
 K_MAX = 50
-ALL_FEATURES = ['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover']
+ALL_FEATURES = [
+    'LME', 'BEME', 'r12_2', 'OP', 'Investment',
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+]
 N_FEATURES_PER_SPLIT = 3   # number of features randomly selected per split level
 
 if __name__ == "__main__":

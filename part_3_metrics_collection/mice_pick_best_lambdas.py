@@ -138,7 +138,10 @@ if __name__ == '__main__':
     PORTS = Path('data/results/tree_portfolios')
     L0 = [0.5, 0.55, 0.6]
     L2 = [10**-7, 10**-7.25, 10**-7.5]
-    ALL_FEATURES = ['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover']
+    ALL_FEATURES = [
+        'LME', 'BEME', 'r12_2', 'OP', 'Investment',
+        'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+    ]
     result = mice_pick_best_lambda(ALL_FEATURES, GRID, 10, L0, L2, PORTS,
                               'level_all_excess_combined_filtered.csv')
     print(f"k=10: train={result[0]:.4f}, valid={result[1]:.4f}, test={result[2]:.4f}")

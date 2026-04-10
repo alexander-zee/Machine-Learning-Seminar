@@ -54,7 +54,10 @@ def run_mice_imputation():
                            on=['permno', 'date'], how='left')
 
     # 3. MICE Imputatie (Per maand)
-    chars = ['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover']
+    chars = [
+        'LME', 'BEME', 'r12_2', 'OP', 'Investment',
+        'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+    ]
     available_chars = [c for c in chars if c in df_combined.columns]
     
     print(f"Start MICE correlatie-imputatie op: {available_chars}")

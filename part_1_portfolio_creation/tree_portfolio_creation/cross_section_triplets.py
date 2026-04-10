@@ -4,9 +4,8 @@ Cross-sections for AP/RP trees: (LME, feat1, feat2) with feat1 < feat2 in FEATS_
 Folder names match ``step2_tree_portfolios`` / ``step2_RP_tree_portfolios``:
 ``LME_<feat1>_<feat2>``.
 
-``FEATS_LIST`` matches ``CHARACTERISTICS`` in ``step1_prepare_data`` on ``main``
-(nine columns including LME; **no** IdioVol in the default main panel).
-That yields C(8,2) = **28** triplets.
+``FEATS_LIST`` matches ``CHARACTERISTICS`` in ``step1_prepare_data`` (ten columns
+including LME and IdioVol). Secondary features excluding LME give C(9,2) = **36** triplet pairs.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ FEATS_LIST = [
     "LT_Rev",
     "AC",
     "LTurnover",
+    "IdioVol",
 ]
 
 

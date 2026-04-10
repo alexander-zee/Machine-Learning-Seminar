@@ -7,7 +7,7 @@ characteristics. At each depth level of each tree, N_FEATURES_PER_SPLIT features
 are drawn at random and a unit vector in that subspace defines the split direction.
  
 Output structure (mirrors step2 so step3 and downstream work unchanged):
-    output_path/LME_BEME_r12_2_OP_Investment_ST_Rev_LT_Rev_AC_LTurnover/
+    output_path/LME_BEME_r12_2_OP_Investment_ST_Rev_LT_Rev_AC_LTurnover_IdioVol/
         {file_id}ret.csv               (T × 31)
         {file_id}{feat}_min.csv        (T × 31)  — one file per feature
         {file_id}{feat}_max.csv        (T × 31)  — one file per feature
@@ -32,7 +32,7 @@ GLOBAL_SEED = 42
  
 ALL_FEATURES = [
     'LME', 'BEME', 'r12_2', 'OP', 'Investment',
-    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover'
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
 ]
 N_FEATURES_PER_SPLIT = 3   # features randomly selected per depth level per tree
  

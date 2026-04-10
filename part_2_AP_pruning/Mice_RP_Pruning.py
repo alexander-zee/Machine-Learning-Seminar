@@ -88,7 +88,7 @@ def Mice_RP_Pruning(allfeatures, input_path, input_file_name, output_path,
 
 
 if __name__ == '__main__':
-    Mice_RP_Pruning( allfeatures=['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover'],
+    Mice_RP_Pruning( allfeatures=['LME', 'BEME', 'r12_2', 'OP', 'Investment', 'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol'],
                input_path=Path('data/results/mice_rp_tree_portfolios'),
                input_file_name='level_all_excess_combined.csv',
                output_path=Path('data/results/grid_search/mice_rp_tree'),

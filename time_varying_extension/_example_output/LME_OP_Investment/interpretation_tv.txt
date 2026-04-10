@@ -1,0 +1,24 @@
+Time-varying kernel extension — interpretation notes
+==================================================
+
+Dual interpretation (Goulet Coulombe et al., 2024):
+- Primal view: predictor contributions (your baseline AP-trees + LASSO).
+- Dual view: each period's objective is expressed via weights on *historical
+  analogues* (here: past months). Kernel weights w_tau are those analogue weights.
+- Effective number of analogues = 1/sum w^2 (concentration).
+- Turnover of kernel weights (TV distance) measures how fast the analogue mix shifts.
+
+Triplet: LME x OP x Investment
+
+Which state variable tracks the conditional premium proxy w'mu most?
+  (largest |correlation|): OP (vw)
+
+Where are the splits (heavier tree depth load)?
+  depth 3: sum(mean|w|) = 0.266621
+  depth 4: sum(mean|w|) = 0.733379
+
+Mean eff. analogues (kernel): 258.22
+Mean L1 turnover of MV weights (sum abs(w_t - w_prev)): 0.023506
+
+See tv_top_pairs.csv for the 10 portfolio pairs whose weights co-move most.
+See tv_kernel_turnover_top.csv for months when the analogue mix changed most.
