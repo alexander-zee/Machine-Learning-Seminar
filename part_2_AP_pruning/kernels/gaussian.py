@@ -5,24 +5,34 @@ from .base import BaseKernel
 class GaussianKernel(BaseKernel):
     """
     Gaussian kernel for continuous stochastic state variables (svar, DEF, TMS).
-
+ 
     Weight for training month t:
         w_t = exp(-(s_current - s_t)^2 / 2h^2)
     normalized to sum to 1.
-
+ 
     Following Kim & Oh (2025), bandwidth h is set as a multiple of the
     rolling std of the state variable over the training window:
         h = multiplier * sigma_S
-
+ 
     The multiplier is selected on the validation set by maximising the
     out-of-sample Sharpe ratio. The candidate multipliers are hardcoded
     in default_multipliers and used via bandwidth_grid(sigma_s).
     """
-
-    # Multipliers of sigma_S to search over, following Kim & Oh (2025)
-    # who search h in [0.05*sigma_S, 5*sigma_S]
-    #TODO functie maken om dit te vullen naar onze svar waarders.
-    default_multipliers = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0]
+    # Range of multipliers to search over
+    # who search h in [0.05*sigma_S, 5*sigma_S].
+    # Use multiplier_grid(n) to get n log-evenly-spaced values in this range.
+    multiplier_min = 0.05
+    multiplier_max = 5.0
+    default_n_multipliers = 5
+ 
+    @classmethod
+    def multiplier_grid(cls, n=None):
+        """
+        Return n log-evenly-spaced multipliers between multiplier_min and multiplier_max.
+        Defaults to default_n_multipliers if n is not given.
+        """
+        n = n if n is not None else cls.default_n_multipliers
+        return list(np.geomspace(cls.multiplier_min, cls.multiplier_max, n))
 
     def __init__(self, h: float):
         if h <= 0:
@@ -39,22 +49,22 @@ class GaussianKernel(BaseKernel):
         return w / total
 
     @classmethod
-    def bandwidth_grid(cls, sigma_s: float, multipliers=None):
+    def bandwidth_grid(cls, sigma_s: float, n=None, multipliers=None):
         """
         Return candidate h values as multiples of the state variable std.
-
+ 
         Parameters
         ----------
-        sigma_s     : rolling std of the state variable over training window.
-                      Computed in AP_Pruning from state.iloc[:n_train_valid].
-        multipliers : override default_multipliers if provided.
-
+        sigma_s     : std of the state variable over the training window.
+        n           : number of bandwidth candidates. Defaults to
+                      default_n_multipliers. Ignored if multipliers is given.
+        multipliers : explicit list of multipliers — overrides n entirely.
+ 
         Returns
         -------
-        list of h floats — one per bandwidth candidate.
-        Enumerate this list in lasso_valid_full to get h_idx.
+        list of h floats, one per bandwidth candidate.
         """
-        mults = multipliers if multipliers is not None else cls.default_multipliers
+        mults = multipliers if multipliers is not None else cls.multiplier_grid(n)
         return [c * sigma_s for c in mults]
 
     @classmethod

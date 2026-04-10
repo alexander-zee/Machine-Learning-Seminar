@@ -24,9 +24,10 @@ FEAT1   = 'OP'
 FEAT2   = 'Investment'
 LAMBDA0 = [0.5, 0.55, 0.6]
 LAMBDA2 = [10**-7, 10**-7.25, 10**-7.5]
-K_MIN   = 5
-K_MAX   = 50
-PORT_N  = 10   # the k we want to evaluate
+K_MIN        = 5
+K_MAX        = 50
+PORT_N       = 10   # the k we want to evaluate
+N_BANDWIDTHS = 5    # number of bandwidth candidates for the Gaussian kernel
 
 TREE_PORT_PATH  = Path('data/results/tree_portfolios')
 GRID_SEARCH_PATH = Path('data/results/grid_search/tree')
@@ -46,32 +47,32 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────────────────
     # Step 1: Grid search — validation only, no full fit
     # ─────────────────────────────────────────────────────────────────
-    print("\n=== STEP 1: Gaussian Kernel Grid Search (validation only) ===")
-    AP_Pruning(
-        feat1=FEAT1,
-        feat2=FEAT2,
-        input_path=TREE_PORT_PATH,
-        input_file_name=PORT_FILE_NAME,
-        output_path=GRID_SEARCH_PATH,
-        n_train_valid=360, cvN=3, runFullCV=False,
-        kmin=K_MIN, kmax=K_MAX,
-        RunParallel=False, ParallelN=10, IsTree=True,
-        lambda0=LAMBDA0, lambda2=LAMBDA2,
-        kernel_cls=GaussianKernel,
-        state=state,
-    )
+    #print("\n=== STEP 1: Gaussian Kernel Grid Search (validation only) ===")
+    #AP_Pruning(
+    #    feat1=FEAT1,
+    #    feat2=FEAT2,
+    #    input_path=TREE_PORT_PATH,
+    #    input_file_name=PORT_FILE_NAME,
+    ##    output_path=GRID_SEARCH_PATH,
+    #    n_train_valid=360, cvN=3, runFullCV=False,
+    #    kmin=K_MIN, kmax=K_MAX,
+    #    RunParallel=False, ParallelN=10, IsTree=True,
+    #    lambda0=LAMBDA0, lambda2=LAMBDA2,
+    #    kernel_cls=GaussianKernel,
+    #    state=state,
+    #    n_bandwidths=N_BANDWIDTHS,
+    #)
 
     # ─────────────────────────────────────────────────────────────────
     # Step 2: Pick best hyperparameters for k=PORT_N
-    #
-    # Scans all 63 validation CSVs, finds the (l0, l2, h) combo
+    # Scans all validation CSVs, finds the (l0, l2, h) combo
     # that maximises valid_SR at k=PORT_N.
     # ─────────────────────────────────────────────────────────────────
     print(f"\n=== STEP 2: Pick Best (lambda0, lambda2, h) for k={PORT_N} ===")
 
     # Need n_bandwidths to tell pick_best how many h files to look for
     sigma_s      = state.iloc[:360].std()
-    bandwidths   = GaussianKernel.bandwidth_grid(sigma_s)
+    bandwidths   = GaussianKernel.bandwidth_grid(sigma_s, n=N_BANDWIDTHS)
     n_bandwidths = len(bandwidths)
 
     res = pick_best_lambda_kernel(

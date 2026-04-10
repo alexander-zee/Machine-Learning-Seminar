@@ -42,7 +42,7 @@ class BaseKernel(ABC):
         pass
 
     @classmethod
-    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int, n=None):
         """
         Derive the bandwidth grid using the training portion of the state variable.
 
@@ -55,6 +55,8 @@ class BaseKernel(ABC):
         ----------
         state         : pd.Series (T_total,) or None
         n_train_valid : int — number of training+validation months
+        n             : number of bandwidth candidates (kernel-specific meaning).
+                        Ignored by kernels that don't use it (e.g. UniformKernel).
 
         Returns
         -------

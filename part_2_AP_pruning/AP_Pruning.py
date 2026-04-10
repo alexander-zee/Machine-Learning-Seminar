@@ -6,7 +6,7 @@ pre-scales returns, then runs the full (lambda0, lambda2, h) grid search.
 
 Changes vs original:
     - Accepts kernel_cls and state (no bandwidths — derived from kernel)
-    - Calls kernel_cls.bandwidth_grid() to get the h grid internally
+    - Calls kernel_cls.bandwidth_grid_from_state() — each kernel builds its own grid
     - Output folder derived from kernel class name:
           output_path/uniform/LME_OP_Investment/
           output_path/gaussian/LME_OP_Investment/
@@ -14,7 +14,7 @@ Changes vs original:
       so the grid search is fully symmetric across all three
     - Everything else (depth weights, adj_ports) unchanged
 """
-
+import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -27,7 +27,7 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
                n_train_valid=360, cvN=3, runFullCV=False, kmin=5, kmax=50,
                RunParallel=False, ParallelN=10, IsTree=True,
                lambda0=None, lambda2=None,
-               kernel_cls=None, state=None):
+               kernel_cls=None, state=None, n_bandwidths=None):
     """
     Run AP-Pruning grid search for one triplet across all (lambda0, lambda2, h).
 
@@ -35,16 +35,20 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
     ----------
     kernel_cls : kernel class (not instance), e.g. GaussianKernel.
                  Defaults to UniformKernel (original behavior).
-                 The bandwidth grid is derived from kernel_cls.bandwidth_grid().
+                 Each kernel derives its own grid via bandwidth_grid_from_state().
     state      : pd.Series (T,) of monthly state variable values aligned with
                  portfolio return rows. None for UniformKernel.
 
     Output
     ------
     output_path / {kernel_name} / LME_{feat1}_{feat2} /
-        results_cv_{fold}_l0_{i}_l2_{j}_h_{h_idx}.csv
-        results_full_l0_{i}_l2_{j}_h_{h_idx}.csv
-    One CSV per (lambda0, lambda2, h) combination, all k in [kmin, kmax].
+        results_cv_{fold}_l0_{i}_l2_{j}_h_{h_idx}.csv   ← validation SRs (all k)
+
+    For non-uniform kernels only validation CSVs are written here.
+    The full test run is handled separately by kernel_full_fit(), which
+    saves per-k files to a full_fit/ subfolder.
+    For UniformKernel the full fit is also run inline, producing:
+        results_full_l0_{i}_l2_{j}_h_1.csv              ← train + test SRs (all k)
     """
     if lambda0 is None:
         lambda0 = [0.5, 0.55, 0.6]
@@ -79,10 +83,29 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
             f"{kernel_cls.__name__} requires a state variable but state=None. "
             "Pass a pd.Series of monthly state values aligned with the portfolio returns."
         )
-    bandwidths = kernel_cls.bandwidth_grid_from_state(state, n_train_valid)
+    bandwidths = kernel_cls.bandwidth_grid_from_state(state, n_train_valid, n=n_bandwidths)
+    assert bandwidths is not None, "bandwidth_grid_from_state must return a list"
 
     kernel_output_path = Path(output_path) / kernel_name
-    print("We call lasso_valid_full")
+    out_subdir = kernel_output_path / subdir
+    out_subdir.mkdir(parents=True, exist_ok=True)
+
+    # Write manifest so pick_best_lambda_kernel knows exactly which
+    # (lambda0, lambda2, bandwidths) values the indices refer to.
+    manifest = {
+        'kernel':       kernel_name,
+        'lambda0':      list(lambda0),
+        'lambda2':      list(lambda2),
+        'bandwidths':   [h if h is not None else 'uniform' for h in bandwidths],
+        'n_train_valid': n_train_valid,
+        'kmin':         kmin,
+        'kmax':         kmax,
+    }
+    manifest_path = out_subdir / 'grid_manifest.json'
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+    print(f"  Manifest written → {manifest_path}", flush=True)
+
     lasso_valid_full(
         adj_ports, lambda0, lambda2,
         str(kernel_output_path), subdir, adj_w,
