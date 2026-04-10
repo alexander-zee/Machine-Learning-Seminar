@@ -22,7 +22,7 @@ def lasso(X: np.ndarray, y: np.ndarray, lambda2: float, steps: int = 70, kmin: i
     yy = np.concatenate([y, np.zeros(p)])
     XX = np.vstack([X, np.diag(np.full(p, np.sqrt(lambda2)))])
 
-    _, _, coefs = lars_path(XX, yy, method='lasso')
+    _, _, coefs = lars_path(XX, yy, method='lasso') # type: ignore
     beta = coefs.T  # (n_steps, p)
 
     K = np.sum(beta != 0, axis=1)

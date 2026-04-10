@@ -1,5 +1,7 @@
 from pathlib import Path
 # Importeer je nieuwe imputatie script
+from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data, build_state_variables
+from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
 from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data
 #from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
 from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import create_tree_portfolio
@@ -20,6 +22,13 @@ from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lamb
 from part_3_metrics_collection.ff5 import evaluate_master_portfolio
 from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
 # Configuration — λ grid (BPZ-style shrinkage). Middle ground: 5×4 = 20 combos (~2× the old 3×3).
+from part_2_AP_pruning.kernels.uniform import UniformKernel
+from part_2_AP_pruning.kernels.gaussian import GaussianKernel
+from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
+
+import pandas as pd
+
+# Configuration (same as in R for the demonstration)
 FEAT1 = 'OP'
 FEAT2 = 'Investment'
 # λ0: return shrinkage (eigen reformulation); centered on the R demo, slightly wider toward 0.4.
@@ -79,25 +88,62 @@ if __name__ == "__main__":
     #    tree_out=Path('data/results/tree_portfolios')
     #)
 
-    #print("\n=== STEP 5: AP‑Pruning Grid Search ===")
-    # The filtered output from step4 is used as input for AP pruning
-    #AP_Pruning(
+    print("\n=== STEP 4: Filter Single‑Sorted Portfolios ===")
+    #filter_tree_ports(
     #    feat1=FEAT1,
     #    feat2=FEAT2,
-    #    input_path=Path('data/results/tree_portfolios'),
-    #    input_file_name='level_all_excess_combined_filtered.csv',
-    #    output_path=Path('data/results/grid_search/tree'),
-    #    n_train_valid=360,         # same as in R
-    #    cvN=3,
-    #    runFullCV=False,
-    #    kmin=K_MIN,
-    #    kmax=K_MAX,
-    #    RunParallel=False,         # set to True if you have many cores
-    #    ParallelN=10,
-    #    IsTree=True,
-    #    lambda0=LAMBDA0,
-    #    lambda2=LAMBDA2
+    #    tree_out=Path('data/results/tree_portfolios')
     #)
+    
+    #Create the state variable which we want, which is in long format. Create the csv, and query from it. 
+    build_state_variables(
+        final_dataset_path=Path('data/raw/FinalDataset.csv'),
+        output_path=Path('data/state_variables.csv'),
+    )
+
+    state_df = pd.read_csv('data/state_variables.csv', index_col='MthCalDt', parse_dates=True)
+    state    = state_df['svar']   # (636,) one value per month
+
+
+    print(state)
+    print("\n=== STEP 5: AP‑Pruning Grid Search ===")
+    #print("\n=== STEP 5: AP‑Pruning Grid Search ===")
+    # The filtered output from step4 is used as input for AP pruning
+     # --- Baseline: uniform kernel (original behavior) ---
+    # --- Baseline: uniform kernel (original behavior) ---
+    # Results -> data/results/grid_search/tree/uniform/LME_OP_Investment/
+    AP_Pruning(
+        feat1=FEAT1,
+        feat2=FEAT2,
+        input_path=Path('data/results/tree_portfolios'),
+        input_file_name='level_all_excess_combined_filtered.csv',
+        output_path=Path('data/results/grid_search/tree'),
+        n_train_valid=360, cvN=3, runFullCV=False,
+        kmin=K_MIN, kmax=K_MAX,
+        RunParallel=False, ParallelN=10, IsTree=True,
+        lambda0=LAMBDA0, lambda2=LAMBDA2,
+        kernel_cls=GaussianKernel,
+        state = state
+    )
+ 
+    # --- Gaussian kernel (svar state variable) ---
+    # Results -> data/results/grid_search/tree/gaussian/LME_OP_Investment/
+    # TODO: build monthly state variable file and uncomment
+    # state = pd.read_csv('data/state_variables.csv',
+    #                     index_col='date', parse_dates=True)['svar']
+    # AP_Pruning(
+    #     feat1=FEAT1,
+    #     feat2=FEAT2,
+    #     input_path=Path('data/results/tree_portfolios'),
+    #     input_file_name='level_all_excess_combined_filtered.csv',
+    #     output_path=Path('data/results/grid_search/tree'),
+    #     n_train_valid=360, cvN=3, runFullCV=False,
+    #     kmin=K_MIN, kmax=K_MAX,
+    #     RunParallel=False, ParallelN=10, IsTree=True,
+    #     lambda0=LAMBDA0, lambda2=LAMBDA2,
+    #     kernel_cls=GaussianKernel,
+    #     state=state,
+    # )
 
     print("\n=== STEP 6: Pick Best Lambda (for k = 10) ===")
     # This will generate the files Selected_Ports_10.csv, etc.
@@ -317,3 +363,4 @@ if __name__ == "__main__":
             print(f"FF5 Alpha={alpha:.6f}  p={pval:.4f}")
 
     print("\nPipeline complete. All results stored under data/results/")
+
