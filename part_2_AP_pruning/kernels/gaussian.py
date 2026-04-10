@@ -57,5 +57,11 @@ class GaussianKernel(BaseKernel):
         mults = multipliers if multipliers is not None else cls.default_multipliers
         return [c * sigma_s for c in mults]
 
+    @classmethod
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
+        """Compute sigma_s from the training window and build the h grid."""
+        sigma_s = state.iloc[:n_train_valid].std()
+        return cls.bandwidth_grid(sigma_s)
+
     def __repr__(self):
         return f"GaussianKernel(h={self.h:.6f})"

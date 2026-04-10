@@ -40,3 +40,26 @@ class BaseKernel(ABC):
         Called by AP_Pruning to construct the search grid.
         """
         pass
+
+    @classmethod
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
+        """
+        Derive the bandwidth grid using the training portion of the state variable.
+
+        This is the single consistent interface called by AP_Pruning — no
+        if/else logic needed there.  Each kernel overrides this to extract
+        whatever it needs from state (e.g. std for Gaussian, window length
+        for Exponential).  UniformKernel uses the default below.
+
+        Parameters
+        ----------
+        state         : pd.Series (T_total,) or None
+        n_train_valid : int — number of training+validation months
+
+        Returns
+        -------
+        list of bandwidth candidates (passed to lasso_valid_full as bandwidths)
+        """
+        # Default: no state needed — delegates to bandwidth_grid() with no args.
+        # Correct for UniformKernel; override in kernels that need state.
+        return cls.bandwidth_grid()

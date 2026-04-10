@@ -56,5 +56,10 @@ class ExponentialKernel(BaseKernel):
         """
         return lambdas if lambdas is not None else cls.default_lambdas
 
+    @classmethod
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
+        """Use n_train_valid as the window length m."""
+        return cls.bandwidth_grid(m=n_train_valid)
+
     def __repr__(self):
         return f"ExponentialKernel(lam={self.lam}, m={self.m})"

@@ -70,22 +70,19 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
 
     adj_ports = ports * adj_w if IsTree else ports.copy()
 
-    # Derive bandwidth grid from the kernel class itself — hardcoded per kernel
-    # UniformKernel.bandwidth_grid()         -> [None]  (one run)
-    # GaussianKernel.bandwidth_grid(sigma_s) -> [0.05*s, 0.1*s, ...]
-    if issubclass(kernel_cls, UniformKernel):
-        bandwidths = kernel_cls.bandwidth_grid()
-    else:
-        if state is None:
-            raise ValueError(
-                f"{kernel_cls.__name__} requires a state variable but state=None. "
-                "Pass a pd.Series of monthly state values aligned with the portfolio returns."
-            )
-        sigma_s    = state.iloc[:n_train_valid].std()
-        bandwidths = kernel_cls.bandwidth_grid(sigma_s)
+    # Each kernel knows how to build its own bandwidth grid from the state.
+    # UniformKernel  → [None]            (no state needed)
+    # GaussianKernel → [c*sigma_s, ...]  (computes sigma_s internally)
+    # ExponentialKernel → [lam, ...]     (uses n_train_valid as window m)
+    if state is None and not issubclass(kernel_cls, UniformKernel):
+        raise ValueError(
+            f"{kernel_cls.__name__} requires a state variable but state=None. "
+            "Pass a pd.Series of monthly state values aligned with the portfolio returns."
+        )
+    bandwidths = kernel_cls.bandwidth_grid_from_state(state, n_train_valid)
 
     kernel_output_path = Path(output_path) / kernel_name
-
+    print("We call lasso_valid_full")
     lasso_valid_full(
         adj_ports, lambda0, lambda2,
         str(kernel_output_path), subdir, adj_w,
