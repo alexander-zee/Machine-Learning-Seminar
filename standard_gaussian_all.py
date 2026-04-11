@@ -14,8 +14,8 @@ from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda_kernel
 # ─────────────────────────────────────────────────────────────────────
 CHARACTERISTICS = [
     'BEME', 'r12_2', 'OP', 'Investment',
-    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover',
-]  # LME is always feat1, IdioVol excluded for now
+    'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
+]  # LME is always feat1
 
 LAMBDA0      = [0.5, 0.55, 0.6]
 LAMBDA2      = [10**-7, 10**-7.25, 10**-7.5]
@@ -139,7 +139,7 @@ def run_one(args):
             'test_SR': None, 'valid_SR': None,
             'months_used': None,
             'lambda0': None, 'lambda2': None, 'h': None,
-            'error': traceback.format_exc(),
+            'error': 'error',  # see terminal logs for full traceback
         }
 
 
