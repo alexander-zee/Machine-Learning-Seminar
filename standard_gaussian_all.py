@@ -194,6 +194,9 @@ if __name__ == "__main__":
             for result in pool.imap_unordered(run_one, args_list):
                 cs = result['cross_section']
                 mask = progress['cross_section'] == cs
+                # Truncate error string so it fits in the DataFrame column
+                if result['error'] is not None:
+                    result['error'] = str(result['error'])[:500]
                 for col in ['status', 'test_SR', 'valid_SR', 'months_used',
                             'lambda0', 'lambda2', 'h', 'error']:
                     progress.loc[mask, col] = result[col]

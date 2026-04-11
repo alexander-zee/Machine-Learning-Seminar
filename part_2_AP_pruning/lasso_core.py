@@ -38,33 +38,49 @@ def one_month_lars(ports_train_arr, state_train_arr, s_current,
     mu     = (w[:, None] * ports_train_arr).sum(axis=0)  # (N,)
     mu_bar = mu.mean()
 
-    # Weighted residuals for SVD
+    # Weighted residuals
     resid    = ports_train_arr - mu[None, :]              # (T, N)
     sqrt_w   = np.sqrt(w)                                  # (T,)
     weighted = sqrt_w[:, None] * resid                     # (T, N)
 
-    # Thin SVD: cost O(T²N) vs O(N³) for eigh — much faster when T < N
-    U, s_raw, Vt = np.linalg.svd(weighted, full_matrices=False)
-
-    # Bessel correction: raw cov eigenvalues = s_raw²
-    # Corrected eigenvalues = s_raw² / (1 - Σw²)
-    # So corrected singular values = s_raw / sqrt(1 - Σw²)
+    # Thin SVD — fast when T < N. Falls back to eigh on the weighted
+    # covariance if SVD fails to converge (e.g. near-degenerate kernel weights).
     bessel = 1.0 - np.sum(w ** 2)
-    if bessel > 0:
-        s = s_raw / np.sqrt(bessel)
-    else:
-        s = s_raw
 
-    mask = s > 1e-10
-    s, Vt = s[mask], Vt[mask]
-    gamma = len(s)
+    try:
+        U, s_raw, Vt = np.linalg.svd(weighted, full_matrices=False)
 
-    if gamma == 0:
-        return {}
+        # Bessel correction on singular values
+        s = s_raw / np.sqrt(bessel) if bessel > 0 else s_raw
 
-    V = Vt.T                                               # (N, gamma)
-    sigma_tilde = V @ np.diag(s) @ V.T                    # (N, N) — sqrt of cov
-    inv_sqrt    = V @ np.diag(1.0 / s) @ V.T              # (N, N) — inv sqrt of cov
+        mask = s > 1e-10
+        s, Vt = s[mask], Vt[mask]
+        gamma = len(s)
+        if gamma == 0:
+            return {}
+
+        V           = Vt.T
+        sigma_tilde = V @ np.diag(s) @ V.T
+        inv_sqrt    = V @ np.diag(1.0 / s) @ V.T
+
+    except np.linalg.LinAlgError:
+        # SVD did not converge — fall back to eigh on the weighted covariance.
+        # Results are equivalent; eigh is more stable for near-degenerate matrices.
+        sigma_raw = (w[:, None] * resid).T @ resid          # (N, N)
+        sigma     = sigma_raw / bessel if bessel > 0 else sigma_raw
+
+        eigenvalues, eigenvectors = np.linalg.eigh(sigma)
+        idx          = np.argsort(eigenvalues)[::-1]
+        eigenvalues  = eigenvalues[idx]
+        eigenvectors = eigenvectors[:, idx]
+
+        gamma = int(np.sum(eigenvalues > 1e-10))
+        if gamma == 0:
+            return {}
+
+        D, V        = eigenvalues[:gamma], eigenvectors[:, :gamma]
+        sigma_tilde = V @ np.diag(np.sqrt(D)) @ V.T
+        inv_sqrt    = V @ np.diag(1.0 / np.sqrt(D)) @ V.T
 
     results = {}
 
