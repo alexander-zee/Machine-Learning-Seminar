@@ -22,10 +22,8 @@ from __future__ import annotations
 import warnings
 from itertools import combinations
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
-import pandas_datareader.data as web
 import statsmodels.api as sm
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -33,7 +31,7 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-KERNEL_NAME   = "gaussian"   # subfolder under GRID_SEARCH_PATH; "uniform" also works
+KERNEL_NAME   = "uniform"   # subfolder under GRID_SEARCH_PATH; "uniform" also works
 K             = 10
 N_TRAIN_VALID = 360
 Y_MIN, Y_MAX  = 1964, 2016
@@ -45,7 +43,7 @@ OUTPUT_PATH      = Path("data/results/diagnostics")
 CHARACTERISTICS = [
     "BEME", "r12_2", "OP", "Investment",
     "ST_Rev", "LT_Rev", "AC", "LTurnover",
-    # "IdioVol",   # <-- uncomment when available
+    "IdioVol",
 ]
 
 # Human-readable short names matching the paper's abbreviations
@@ -75,8 +73,10 @@ def _generate_dates(y_min: int = Y_MIN, y_max: int = Y_MAX) -> np.ndarray:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FF5 factor download (cached in memory across calls)
+# FF5 factors — loaded from local CSV (downloaded once from French library)
 # ─────────────────────────────────────────────────────────────────────────────
+
+FF5_CSV = Path("data/raw/F-F_Research_Data_5_Factors_2x3.csv")
 
 _ff5_cache: pd.DataFrame | None = None
 
@@ -85,19 +85,20 @@ def _load_ff5() -> pd.DataFrame:
     global _ff5_cache
     if _ff5_cache is not None:
         return _ff5_cache
-    print("Fetching FF5 factors from Kenneth French Data Library...", flush=True)
-    ff_dict = web.DataReader(
-        "F-F_Research_Data_5_Factors_2x3", "famafrench",
-        start="1960-01-01", end="2026-12-31",
-    )
-    ff5 = ff_dict[0].copy()
-    ff5.index = ff5.index.to_timestamp().strftime("%Y%m").astype(int)
+    print(f"Loading FF5 factors from {FF5_CSV}...", flush=True)
+    # French CSV has 4 descriptive header lines before the column row
+    ff5 = pd.read_csv(FF5_CSV, skiprows=4, index_col=0)
+    # Drop annual summary rows at the bottom (index is no longer 6-digit YYYYMM)
+    ff5 = ff5[ff5.index.astype(str).str.strip().str.match(r'^\d{6}$')]
+    ff5.index = ff5.index.astype(int)
+    ff5.index.name = "Date"
     factor_cols = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+    ff5[factor_cols] = ff5[factor_cols].apply(pd.to_numeric, errors="coerce")
     ff5[factor_cols] = ff5[factor_cols] / 100.0
-    print(f"  FF5 loaded: {len(ff5)} months", flush=True)
+    print(f"  FF5 loaded: {len(ff5)} months "
+          f"({ff5.index[0]} - {ff5.index[-1]})", flush=True)
     _ff5_cache = ff5
     return ff5
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Hyperparameter lookup from the full_fit summary CSV
