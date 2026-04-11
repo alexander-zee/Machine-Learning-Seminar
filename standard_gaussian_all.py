@@ -100,23 +100,18 @@ def run_one(args):
               f"l2={LAMBDA2[j_best]:.2e}, h={bandwidths[h_best]:.6f}", flush=True)
 
         # Step 3: Full fit
-        ports     = pd.read_csv(TREE_PORT_PATH / subdir / PORT_FILE_NAME)
-        depths    = np.array([len(col.split('.')[1]) - 1 for col in ports.columns])
-        adj_w     = 1.0 / np.sqrt(2.0 ** depths)
-        adj_ports = ports * adj_w
-
         kernel_star  = GaussianKernel(h=bandwidths[h_best])
         full_fit_dir = GRID_SEARCH_PATH / 'gaussian' / subdir / 'full_fit'
 
         result = kernel_full_fit(
-            ports=adj_ports,
             k_target=PORT_N,
             lambda0_star=LAMBDA0[i_best],
             lambda2_star=LAMBDA2[j_best],
             kernel=kernel_star,
             state=_state,
-            adj_w=adj_w,
             output_dir=str(full_fit_dir),
+            input_path=TREE_PORT_PATH / subdir,
+            input_file_name=PORT_FILE_NAME,
             n_train_valid=360,
             kmin=K_MIN, kmax=K_MAX,
             kernel_name='gaussian',
