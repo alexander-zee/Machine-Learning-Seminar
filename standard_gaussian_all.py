@@ -1,9 +1,8 @@
 from itertools import combinations
 from pathlib import Path
-from multiprocessing import Pool, Manager
+from multiprocessing import Pool
 import traceback
 import pandas as pd
-import numpy as np
 
 from part_2_AP_pruning.AP_Pruning import AP_Pruning
 from part_2_AP_pruning.kernels.gaussian import GaussianKernel
@@ -24,7 +23,7 @@ K_MIN        = 5
 K_MAX        = 50
 PORT_N       = 10
 N_BANDWIDTHS = 5
-N_WORKERS    = 4  # number of parallel combinations — adjust to taste
+N_WORKERS    = 4
 
 TREE_PORT_PATH   = Path('data/results/tree_portfolios')
 GRID_SEARCH_PATH = Path('data/results/grid_search/tree')
@@ -39,7 +38,9 @@ SUMMARY_PATH  = GRID_SEARCH_PATH / 'gaussian' / 'all_cross_sections_summary_stan
 def load_progress():
     PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
     if PROGRESS_PATH.exists():
-        return pd.read_csv(PROGRESS_PATH)
+        df = pd.read_csv(PROGRESS_PATH)
+        df['error'] = df['error'].astype(object)
+        return df
     df = pd.DataFrame([
         {'feat1': f1, 'feat2': f2,
          'cross_section': f'LME_{f1}_{f2}',
@@ -49,6 +50,7 @@ def load_progress():
          'months_used': None, 'error': None}
         for f1, f2 in PAIRS
     ])
+    df['error'] = df['error'].astype(object)
     df.to_csv(PROGRESS_PATH, index=False)
     print(f"Progress file created: {PROGRESS_PATH}")
     return df
@@ -59,10 +61,6 @@ def save_progress(df):
 
 
 def run_one(args):
-    """
-    Run one combination (feat1, feat2) end-to-end.
-    Returns a dict with results or error info.
-    """
     feat1, feat2, bandwidths, n_bandwidths = args
     subdir = f'LME_{feat1}_{feat2}'
 
@@ -145,7 +143,6 @@ def run_one(args):
         }
 
 
-# State is loaded once in the main process and shared via initializer
 _state = None
 
 def init_worker(state):
@@ -166,7 +163,6 @@ if __name__ == "__main__":
 
     progress = load_progress()
 
-    # Filter to combinations not yet done
     pending = progress[progress['status'] != 'done']
     n_done  = len(progress) - len(pending)
     print(f"{n_done}/{len(PAIRS)} already done, {len(pending)} remaining")
@@ -175,13 +171,11 @@ if __name__ == "__main__":
     if len(pending) == 0:
         print("All combinations already done.")
     else:
-        # Build args for pending combinations only
         args_list = [
             (row['feat1'], row['feat2'], bandwidths, n_bandwidths)
             for _, row in pending.iterrows()
         ]
 
-        # Run in parallel, collecting results as they complete
         with Pool(processes=N_WORKERS,
                   initializer=init_worker,
                   initargs=(state,)) as pool:
@@ -189,7 +183,6 @@ if __name__ == "__main__":
             for result in pool.imap_unordered(run_one, args_list):
                 cs = result['cross_section']
                 mask = progress['cross_section'] == cs
-                # Truncate error string so it fits in the DataFrame column
                 if result['error'] is not None:
                     result['error'] = str(result['error'])[:500]
                 for col in ['status', 'test_SR', 'valid_SR', 'months_used',
@@ -199,7 +192,6 @@ if __name__ == "__main__":
                 print(f"  Saved progress for {cs} — status: {result['status']}",
                       flush=True)
 
-    # Final summary
     done = progress[progress['status'] == 'done']
     done.to_csv(SUMMARY_PATH, index=False)
     print(f"\nAll done. {len(done)}/{len(PAIRS)} completed.")
