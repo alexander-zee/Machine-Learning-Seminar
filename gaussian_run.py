@@ -46,31 +46,38 @@ if __name__ == "__main__":
 
     # ─────────────────────────────────────────────────────────────────
     # Step 1: Grid search — validation only, no full fit
+    #
+    # For each bandwidth h (7 candidates):
+    #     For CV fold 3:
+    #         120 validation months × 9 (l0, l2) combos
+    #         → 9 CSVs with valid_SR per k
+    # Total: 7 × 120 = 840 per-month LARS calls
+    # Output: 63 CSVs in gaussian/LME_OP_Investment/
     # ─────────────────────────────────────────────────────────────────
-    #print("\n=== STEP 1: Gaussian Kernel Grid Search (validation only) ===")
-    #AP_Pruning(
-    #    feat1=FEAT1,
-    #    feat2=FEAT2,
-    #    input_path=TREE_PORT_PATH,
-    #    input_file_name=PORT_FILE_NAME,
-    ##    output_path=GRID_SEARCH_PATH,
-    #    n_train_valid=360, cvN=3, runFullCV=False,
-    #    kmin=K_MIN, kmax=K_MAX,
-    #    RunParallel=False, ParallelN=10, IsTree=True,
-    #    lambda0=LAMBDA0, lambda2=LAMBDA2,
-    #    kernel_cls=GaussianKernel,
-    #    state=state,
-    #    n_bandwidths=N_BANDWIDTHS,
-    #)
+    print("\n=== STEP 1: Gaussian Kernel Grid Search (validation only) ===")
+    AP_Pruning(
+        feat1=FEAT1,
+        feat2=FEAT2,
+        input_path=TREE_PORT_PATH,
+        input_file_name=PORT_FILE_NAME,
+        output_path=GRID_SEARCH_PATH,
+        n_train_valid=360, cvN=3, runFullCV=False,
+        kmin=K_MIN, kmax=K_MAX,
+        RunParallel=False, ParallelN=10, IsTree=True,
+        lambda0=LAMBDA0, lambda2=LAMBDA2,
+        kernel_cls=GaussianKernel,
+        state=state,
+        n_bandwidths=N_BANDWIDTHS,
+    )
 
     # ─────────────────────────────────────────────────────────────────
     # Step 2: Pick best hyperparameters for k=PORT_N
-    # Scans all validation CSVs, finds the (l0, l2, h) combo
+    #
+    # Scans all 63 validation CSVs, finds the (l0, l2, h) combo
     # that maximises valid_SR at k=PORT_N.
     # ─────────────────────────────────────────────────────────────────
     print(f"\n=== STEP 2: Pick Best (lambda0, lambda2, h) for k={PORT_N} ===")
 
-    # Need n_bandwidths to tell pick_best how many h files to look for
     sigma_s      = state.iloc[:360].std()
     bandwidths   = GaussianKernel.bandwidth_grid(sigma_s, n=N_BANDWIDTHS)
     n_bandwidths = len(bandwidths)
@@ -101,28 +108,19 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────────────────────────
     print(f"\n=== STEP 3: Full Fit for k={PORT_N} ===")
 
-    # Load the adj_ports (same preprocessing as AP_Pruning does internally)
-    subdir    = f'LME_{FEAT1}_{FEAT2}'
-    ports     = pd.read_csv(TREE_PORT_PATH / subdir / PORT_FILE_NAME)
-    depths    = np.array([len(col.split('.')[1]) - 1 for col in ports.columns])
-    adj_w     = 1.0 / np.sqrt(2.0 ** depths)
-    adj_ports = ports * adj_w
-
-    # Instantiate the winning kernel
-    kernel_star = GaussianKernel(h=bandwidths[h_best])
-
-    # Output directory for this run
+    subdir       = f'LME_{FEAT1}_{FEAT2}'
+    kernel_star  = GaussianKernel(h=bandwidths[h_best])
     full_fit_dir = GRID_SEARCH_PATH / 'gaussian' / subdir / 'full_fit'
 
     result = kernel_full_fit(
-        ports=adj_ports,
         k_target=PORT_N,
         lambda0_star=LAMBDA0[i_best],
         lambda2_star=LAMBDA2[j_best],
         kernel=kernel_star,
         state=state,
-        adj_w=adj_w,
         output_dir=str(full_fit_dir),
+        input_path=TREE_PORT_PATH / subdir,
+        input_file_name=PORT_FILE_NAME,
         n_train_valid=360,
         kmin=K_MIN, kmax=K_MAX,
         kernel_name='gaussian',

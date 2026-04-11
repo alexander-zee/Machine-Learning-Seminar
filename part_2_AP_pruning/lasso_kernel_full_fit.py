@@ -40,6 +40,7 @@ Notes
 """
 
 import os
+from pathlib import Path
 import warnings
 
 import numpy as np
@@ -49,15 +50,15 @@ from .lasso_core import one_month_lars
 
 
 def kernel_full_fit(
-    ports,
     k_target,
     lambda0_star,
     lambda2_star,
     kernel,
     state,
-    adj_w,
     output_dir,
     *,
+    input_path,
+    input_file_name,
     n_train_valid=360,
     kmin=5,
     kmax=50,
@@ -68,18 +69,18 @@ def kernel_full_fit(
 
     Parameters
     ----------
-    ports         : DataFrame (T_total, N) of pre-scaled portfolio excess returns
-    k_target      : int — the specific number of portfolios to evaluate
-    lambda0_star  : float — winning l0 hyperparameter
-    lambda2_star  : float — winning l2 hyperparameter
-    kernel        : kernel instance already initialised with bandwidth h*
-    state         : pd.Series (T_total,) — monthly state variable
-    adj_w         : (N,) — depth-based pre-weights (from AP-Tree depths)
-    output_dir    : str or Path — directory for output CSVs
-    n_train_valid : int — number of months in the training+validation window
-    kmin, kmax    : int — LARS path bounds (must bracket k_target)
-    kernel_name   : str or None — label written to the summary CSV
-                    (e.g. 'gaussian', 'exponential').  Inferred from repr if None.
+    k_target        : int — the specific number of portfolios to evaluate
+    lambda0_star    : float — winning l0 hyperparameter
+    lambda2_star    : float — winning l2 hyperparameter
+    kernel          : kernel instance already initialised with bandwidth h*
+    state           : pd.Series (T_total,) — monthly state variable
+    output_dir      : str or Path — directory for output CSVs
+    input_path      : Path — directory containing LME_feat1_feat2 subfolders
+    input_file_name : str — portfolio CSV filename
+    n_train_valid   : int — number of months in the training+validation window
+    kmin, kmax      : int — LARS path bounds (must bracket k_target)
+    kernel_name     : str or None — label written to the summary CSV
+                      (e.g. 'gaussian', 'exponential').  Inferred from repr if None.
 
     Output files (in output_dir)
     ----------------------------
@@ -106,6 +107,14 @@ def kernel_full_fit(
             f"k_target={k_target} is outside the LARS path bounds "
             f"[kmin={kmin}, kmax={kmax}]."
         )
+
+    # ------------------------------------------------------------------ #
+    # Load and preprocess portfolio data
+    # ------------------------------------------------------------------ #
+    ports_raw = pd.read_csv(Path(input_path) / input_file_name)
+    depths    = np.array([len(col.split('.')[1]) - 1 for col in ports_raw.columns])
+    adj_w     = 1.0 / np.sqrt(2.0 ** depths)
+    ports     = ports_raw * adj_w
 
     # ------------------------------------------------------------------ #
     # Split into train and test
