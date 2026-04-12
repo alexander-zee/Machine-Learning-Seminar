@@ -30,6 +30,7 @@ ALL_FEATURES = [
     'LME', 'BEME', 'r12_2', 'OP', 'Investment',
     'ST_Rev', 'LT_Rev', 'AC', 'LTurnover', 'IdioVol',
 ]
+N_FEATURES_PER_SPLIT = 3
  
 _REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 _SHIPPED_RF = _REPO_ROOT / 'paper_data' / 'factor' / 'rf_factor.csv'
@@ -79,6 +80,7 @@ def combine_mice_rp_trees(
     n_trees: int        = N_TREES,
     factor_path: Path   = FACTOR_PATH,
     tree_out: Path      = TREE_OUT,
+    n_features_per_split: int = N_FEATURES_PER_SPLIT
 ) -> None:
     """
     Combine all n_trees RP trees built over all_features.
@@ -98,7 +100,7 @@ def combine_mice_rp_trees(
         level_all_{feat}_min.csv              (T × N_dedup)  — one per feature
         level_all_{feat}_max.csv              (T × N_dedup)  — one per feature
     """
-    sub_dir  = '_'.join(all_features)
+    sub_dir = f"{'_'.join(all_features)}__nf{n_features_per_split}"
     data_dir = tree_out / sub_dir
  
     print(f"Combining {n_trees} RP trees")
@@ -167,4 +169,5 @@ if __name__ == '__main__':
         all_features = ALL_FEATURES,
         factor_path  = FACTOR_PATH,
         tree_out     = TREE_OUT,
+        n_features_per_split= N_FEATURES_PER_SPLIT
     )

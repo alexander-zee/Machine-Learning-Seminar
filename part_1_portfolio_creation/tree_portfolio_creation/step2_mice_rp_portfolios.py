@@ -327,7 +327,7 @@ def create_mice_rp_tree_portfolio(tree_depth: int        = TREE_DEPTH,
  
     Additionally saves projection_metadata.json for auditability.
     """
-    sub_dir = '_'.join(all_features)
+    sub_dir = f"{'_'.join(all_features)}__nf{n_features_per_split}"
     out_dir = output_path / sub_dir
     out_dir.mkdir(parents=True, exist_ok=True)
  
@@ -394,7 +394,7 @@ def create_mice_rp_tree_portfolio(tree_depth: int        = TREE_DEPTH,
  
 def load_projection(tree_id: str,
                     all_features: list   = ALL_FEATURES,
-                    output_path: Path    = OUTPUT_PATH) -> dict:
+                    output_path: Path    = OUTPUT_PATH, n_features_per_split: int = N_FEATURES_PER_SPLIT) -> dict:
     """
     Load and display the projection metadata for a specific tree.
  
@@ -407,7 +407,7 @@ def load_projection(tree_id: str,
     -------
     dict with depth-level feature selections and unit vectors
     """
-    sub_dir   = '_'.join(all_features)
+    sub_dir = f"{'_'.join(all_features)}__nf{n_features_per_split}"
     meta_path = output_path / sub_dir / 'projection_metadata.json'
     with open(meta_path) as f:
         metadata = json.load(f)
