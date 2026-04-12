@@ -1,36 +1,4 @@
 """
-ledoit_wolf_sr_test.py — HAC inference for SR differences (Ledoit & Wolf 2008, Section 3.1).
-
-Implements exactly the HAC test from Section 3.1 of:
-    Ledoit, O. and Wolf, M. (2008). Robust performance hypothesis testing
-    with the Sharpe ratio. Journal of Empirical Finance, 15:850-859.
-
-The test operates on the 4-dimensional vector (equation numbering from paper):
-
-    y_t = (r_ti - mu_i,  r_tn - mu_n,  r²_ti - gamma_i,  r²_tn - gamma_n)
-
-The long-run covariance matrix Psi of y_t is estimated via HAC kernel estimation
-(Section 3.1), with the T/(T-4) small-sample degrees-of-freedom correction.
-
-The standard error for Delta_hat = SR_i - SR_n is obtained via the delta method
-(Eq. 4-5 of the paper):
-
-    s(Delta_hat) = sqrt( grad_f(v_hat)' @ Psi_hat @ grad_f(v_hat) / T )
-
-where f(a,b,c,d) = a/sqrt(c-a²) - b/sqrt(d-b²)  maps the four moments
-(mu_i, mu_n, gamma_i, gamma_n) to the SR difference, and
-
-    grad_f(a,b,c,d) = (  c/(c-a²)^1.5,
-                         -d/(d-b²)^1.5,
-                         -0.5*a/(c-a²)^1.5,
-                          0.5*b/(d-b²)^1.5  )
-
-The two-sided p-value is:
-    p = 2 * Phi(-|Delta_hat| / s(Delta_hat))
-
-We use the Quadratic Spectral (QS) kernel with Andrews (1991) automatic bandwidth,
-as recommended by the paper for the time series case.
-
 Three pairwise comparisons are run:
     uniform vs exponential
     uniform vs gaussian
@@ -102,12 +70,7 @@ def _load_excess_returns(kernel_name: str, subdir: str, k: int) -> pd.Series | N
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 2 — Build y_t vectors (Section 3.1)
-#
-# y_t = (r_ti - mu_i,  r_tn - mu_n,  r²_ti - gamma_i,  r²_tn - gamma_n)
-#
-# mu_i = E[r_ti],  gamma_i = E[r²_ti]  (uncentered second moment)
-# Note: sigma²_i = gamma_i - mu_i²
+# Step 2 — Build y_t vectors
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_y(r_i: np.ndarray, r_n: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -135,20 +98,14 @@ def _build_y(r_i: np.ndarray, r_n: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 3 — HAC estimator for Psi (Section 3.1)
-#
-# Psi_hat = T/(T-4) * sum_{j=-(T-1)}^{T-1} k(j/S_T) * C_hat_T(j)
-#
-# C_hat_T(j) = (1/T) * sum_{t=j+1}^{T} y_hat_t @ y_hat_{t-j}'   for j >= 0
-#
-# We use the QS kernel with Andrews (1991) automatic bandwidth.
+# Step 3 — HAC estimator for Psi baseed on Andrews 1991
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _qs_kernel(x: float) -> float:
     """
     Quadratic Spectral kernel k(x).
     k(0) = 1,  k(x) -> 0 as x -> ±inf.
-    QS has characteristic exponent q=2, guaranteeing PSD estimates.
+    QS has characteristic exponent q=2
     """
     if abs(x) < 1e-10:
         return 1.0
@@ -159,23 +116,6 @@ def _qs_kernel(x: float) -> float:
 def _andrews_bandwidth(Y: np.ndarray) -> float:
     """
     Andrews (1991) automatic bandwidth for the QS kernel.
-
-    Implements exactly Eq. 6.4 of Andrews (1991) for q=2 (QS kernel):
-
-        alpha_hat(2) = [ sum_a  4*rho_a^2 * sigma_a^4 / (1-rho_a)^8 ]
-                       / [ sum_a  sigma_a^4 / (1-rho_a)^4 ]
-
-        S_T = 1.3221 * (alpha_hat(2) * T)^(1/5)
-
-    where a = 1,...,p indexes the p=4 columns of Y, rho_a is the OLS
-    AR(1) coefficient for column a, and sigma_a^2 is the innovation
-    variance (mean squared AR(1) residual) for column a.
-
-    Equal weights w_a = 1/p are used, which cancel in the ratio,
-    leaving the expression above.
-
-    The constant 1.3221 is the kernel-specific constant for the QS kernel
-    derived analytically by Andrews (1991), Table I.
     """
     T = Y.shape[0]
 
@@ -260,14 +200,7 @@ def _hac_psi(Y: np.ndarray) -> np.ndarray:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step 4 — Delta method gradient (paper, just below Eq. 4)
-#
-# f(a,b,c,d) = a/sqrt(c-a²) - b/sqrt(d-b²)
-#
-# grad_f = ( c/(c-a²)^1.5,      d/d(mu_i)
-#            -d/(d-b²)^1.5,     d/d(mu_n)
-#            -0.5a/(c-a²)^1.5,  d/d(gamma_i)
-#             0.5b/(d-b²)^1.5 ) d/d(gamma_n)
+# Step 4 — Delta method gradient
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _delta_grad(v_hat: np.ndarray) -> np.ndarray | None:
@@ -297,7 +230,7 @@ def _delta_grad(v_hat: np.ndarray) -> np.ndarray | None:
 
 def _lw_hac_test(r_i: np.ndarray, r_n: np.ndarray) -> dict:
     """
-    Full Section 3.1 HAC test from Ledoit & Wolf (2008).
+    Full test
 
     Parameters
     ----------
