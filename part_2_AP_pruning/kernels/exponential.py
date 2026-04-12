@@ -20,8 +20,7 @@ class ExponentialKernel(BaseKernel):
     Following Kim & Oh (2025), lambda is searched in [0.98, 0.9999].
     """
 
-    # Candidate lambda values to search over
-    default_lambdas = [0.98, 0.99, 0.995, 0.999, 0.9995, 0.9999]
+    default_lambdas = [0.98, 0.99, 0.999, 0.9995, 0.9999]
 
     def __init__(self, lam: float, m: int):
         if not (0 < lam < 1):
@@ -30,6 +29,14 @@ class ExponentialKernel(BaseKernel):
             raise ValueError(f"Window length m must be positive, got {m}")
         self.lam = lam
         self.m   = m
+
+    @property
+    def h(self):
+        """
+        Alias for lam so that kernel_full_fit can read
+        getattr(kernel, 'h', None) generically across all kernel types.
+        """
+        return self.lam
 
     def weights(self, state_train: np.ndarray, state_current: float) -> np.ndarray:
         T = len(state_train)
@@ -57,8 +64,11 @@ class ExponentialKernel(BaseKernel):
         return lambdas if lambdas is not None else cls.default_lambdas
 
     @classmethod
-    def bandwidth_grid_from_state(cls, state, n_train_valid: int):
-        """Use n_train_valid as the window length m."""
+    def bandwidth_grid_from_state(cls, state, n_train_valid: int, n=None):
+        """
+        Use n_train_valid as the window length m.
+        n is accepted but ignored — the lambda grid is fixed, not n-dependent.
+        """
         return cls.bandwidth_grid(m=n_train_valid)
 
     def __repr__(self):
