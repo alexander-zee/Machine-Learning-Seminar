@@ -1,6 +1,6 @@
 import numpy as np
 from .base import BaseKernel
-
+from typing import Optional
 
 class ExponentialKernel(BaseKernel):
     """
@@ -22,7 +22,13 @@ class ExponentialKernel(BaseKernel):
 
     default_lambdas = [0.98, 0.99, 0.999, 0.9995, 0.9999]
 
-    def __init__(self, lam: float, m: int):
+    def __init__(self, lam: Optional[float] = None, m: int = 360, h: Optional[float] = None):
+        # Accept h as an alias for lam to keep the interface consistent
+        # with GaussianKernel — the pipeline passes h= generically.
+        if lam is None and h is not None:
+            lam = h
+        if lam is None:
+            raise ValueError("Must provide either lam or h.")
         if not (0 < lam < 1):
             raise ValueError(f"Lambda must be in (0, 1), got {lam}")
         if m <= 0:

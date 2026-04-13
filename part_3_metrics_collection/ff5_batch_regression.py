@@ -31,7 +31,7 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-KERNEL_NAME   = "gaussian"   # subfolder under GRID_SEARCH_PATH; "uniform" also works
+KERNEL_NAME   = "exponential"   # subfolder under GRID_SEARCH_PATH; "uniform" also works
 K             = 10
 N_TRAIN_VALID = 360
 Y_MIN, Y_MAX  = 1964, 2016
