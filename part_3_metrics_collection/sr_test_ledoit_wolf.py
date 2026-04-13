@@ -462,7 +462,7 @@ def run_lw_comparison(
         df.to_csv(out_csv, index=False)
         print(f"\n  Saved → {out_csv}", flush=True)
 
-    return df
+    return df 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -474,7 +474,6 @@ if __name__ == "__main__":
     COMPARISONS = [
         ("uniform",     "exponential"),
         ("uniform",     "gaussian"),
-        ("exponential", "gaussian"),
     ]
 
     for kernel_a, kernel_b in COMPARISONS:
