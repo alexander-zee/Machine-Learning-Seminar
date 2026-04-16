@@ -15,7 +15,20 @@ compute_net_sharpe_uniform
 
 Both functions call the shared _run_tc_loop and _save_results helpers.
 
-Run with: python -m part_3_metrics_collection.transaction_costs2
+Key fix vs naive implementation
+--------------------------------
+For the kernel case, SDF weights w_j^MVE change every month. The drift term
+requires applying the *current* month's SDF weights to the *previous* month's
+stock value-weights. We therefore store VW_prev as:
+
+    {permno: {col: vw}}   ← raw value-weight of stock i in portfolio j, no SDF weight
+
+Then in month t we compute:
+
+    W_prev_it = sum_j( sdf_w_mat[t, j] * VW_prev[permno][col] )
+
+before applying the drift. This is correct for both kernel (changing w_j) and
+uniform (constant w_j) cases.
 """
 
 import numpy as np
@@ -91,7 +104,6 @@ def _load_panel(panel_path: Path, features: list, test_months: pd.DataFrame) -> 
         columns=['permno', 'yy', 'mm', 'ret', 'size'] + features
     )
     panel = panel.dropna(subset=features + ['ret', 'size'])
-    # Merge is faster than row-wise apply for filtering to test months
     panel = panel.merge(
         test_months[['yy', 'mm']].drop_duplicates(),
         on=['yy', 'mm'],
@@ -112,7 +124,7 @@ def _run_tc_loop(
     test_mm:   list,
 ) -> np.ndarray:
     """
-    Core month-by-month TC loop shared by both entry points.
+    Core month-by-month TC loop.
 
     Parameters
     ----------
@@ -129,7 +141,12 @@ def _run_tc_loop(
     """
     T_test    = len(gross_ret)
     tc_series = np.zeros(T_test)
-    W_prev: dict = {}
+
+    # VW_prev stores RAW value-weights from last month, without SDF weights applied.
+    # Structure: {permno: {col: vw}}
+    # This lets us apply the CURRENT month's SDF weights to last month's stock
+    # memberships when computing the drift — correct for time-varying SDF weights.
+    VW_prev: dict = {}
 
     for t in range(T_test):
         yy = test_yy[t]
@@ -139,7 +156,7 @@ def _run_tc_loop(
 
         if month_panel.empty:
             print(f"  Warning: empty panel for {yy}-{mm:02d}, TC set to 0")
-            W_prev = {}
+            VW_prev = {}
             continue
 
         # Rank-normalised market cap → cost parameter (Bemelmans et al. eq. 2)
@@ -149,22 +166,46 @@ def _run_tc_loop(
 
         r_mve = float(gross_ret[t])
 
-        # Build W_current: total spanning-portfolio weight per stock
-        W_current: dict = {}
+        # ── Build VW_current and W_current ────────────────────────────────────
+        # VW_current: {permno: {col: vw}}  raw value-weights, stored for next month
+        # W_current:  {permno: float}      combined SDF weight = sum_j(w_j * vw_ij)
+        VW_current: dict = {}
+        W_current:  dict = {}
+
         for col_idx, col in enumerate(port_cols):
             w_j = float(sdf_w_mat[t, col_idx])
             if w_j == 0.0:
                 continue
             feat_list, depth, node_num = col_info[col]
             stock_vw = get_stock_value_weights(month_panel, feat_list, depth, node_num)
-            for permno, vw in stock_vw.items():
-                W_current[permno] = W_current.get(permno, 0.0) + w_j * float(vw)
 
-        # TC_t = sum_i |W_it - W_drifted_{i,t}| * c_it
+            for permno, vw in stock_vw.items():
+                vw_f = float(vw)
+                # Store raw vw per portfolio (for next month's drift)
+                if permno not in VW_current:
+                    VW_current[permno] = {}
+                VW_current[permno][col] = vw_f
+                # Accumulate combined weight
+                W_current[permno] = W_current.get(permno, 0.0) + w_j * vw_f
+
+        # ── Compute W_prev using CURRENT month's SDF weights ──────────────────
+
+        W_prev: dict = {}
+        for permno, col_vw in VW_prev.items():
+            total = 0.0
+            for col_idx, col in enumerate(port_cols):
+                vw = col_vw.get(col, 0.0)
+                if vw == 0.0:
+                    continue
+                total += float(sdf_w_mat[t, col_idx]) * vw
+            if total != 0.0:
+                W_prev[permno] = total
+
+        # ── TC_t = sum_i |W_it - W_drifted_it| * c_it ────────────────────────
         cost_lookup = month_panel.set_index('permno')['c'].to_dict()
         ret_lookup  = month_panel.set_index('permno')['ret'].to_dict()
         tc_t = 0.0
-        #Loop over all of the stocks in the current and previous portfolios
+
         for permno in set(W_current.keys()) | set(W_prev.keys()):
             W_it      = W_current.get(permno, 0.0)
             W_prev_it = W_prev.get(permno, 0.0)
@@ -173,7 +214,7 @@ def _run_tc_loop(
             tc_t     += abs(W_it - W_drifted) * cost_lookup.get(permno, 0.0)
 
         tc_series[t] = tc_t
-        W_prev = W_current
+        VW_prev = VW_current   # carry forward raw weights for next month
 
         if t == 0 or (t + 1) % 20 == 0:
             print(f"  t={t+1:3d}/{T_test}  [{yy}-{mm:02d}]  "
@@ -235,7 +276,7 @@ def _save_results(
     }
 
 
-# ── Entry point 1: kernel / rolling ───────────────────────────────────────────
+# ── Entry point 1: kernel ──────────────────────────────────────────────────────
 
 def compute_net_sharpe(
     detail_path:   Path,
@@ -245,7 +286,7 @@ def compute_net_sharpe(
     label:         str = '',
 ) -> dict:
     """
-    Compute net SR for a kernel or rolling-window SDF.
+    Compute net SR for a kernel SDF.
 
     detail_path : full_fit_detail_k{k}.csv
                   T_test rows × (excess_return + one column per portfolio)
