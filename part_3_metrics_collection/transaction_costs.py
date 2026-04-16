@@ -22,7 +22,14 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import assign_nodes_month, TREE_DEPTH, Q_NUM
+from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import (
+    assign_nodes_month,
+    TREE_DEPTH,
+    Q_NUM,
+)
+from part_1_portfolio_creation.tree_portfolio_creation.step2_RP_tree_portfolios import (
+    assign_nodes_month_rp,
+)
 
 Y_MIN         = 1964
 Y_MAX         = 2016
@@ -56,6 +63,64 @@ def decode_column(col_name: str, features: list) -> tuple:
     return feat_list, depth, node_num
 
 
+def load_rp_projection_dict(npz_path: Path) -> dict[str, np.ndarray]:
+    """
+    Load ``projection_matrices.npz`` written by ``step2_RP_tree_portfolios``.
+
+    Returns a mapping ``tree_id`` (zero-padded, e.g. ``'04'``) → array of shape
+    ``(tree_depth, n_feats)``.
+    """
+    if not npz_path.is_file():
+        raise FileNotFoundError(f"RP projection file not found: {npz_path}")
+    data = np.load(npz_path)
+    return {str(k): np.asarray(data[k]) for k in data.files}
+
+
+def decode_rp_column(
+    col_name: str,
+    feat_cols: list[str],
+    proj_by_tree_id: dict[str, np.ndarray],
+) -> tuple[list[str], int, int, np.ndarray]:
+    """
+    Parse an RP combined column ``{tree_id}.{node_path}`` (e.g. ``04.11212``).
+
+    ``tree_id`` must match a key in ``proj_by_tree_id`` (same zero-padding as
+    step2/step3). ``node_path`` uses the usual CNAMES encoding; ``port{depth}``
+    indexing matches ``assign_nodes_month_rp``.
+
+    Returns
+    -------
+    feat_list, depth, node_num, proj_matrix
+        Tuple suitable as one entry in ``col_info`` for ``_run_tc_loop`` (RP row).
+    """
+    parts = col_name.split(".", 1)
+    if len(parts) != 2:
+        raise ValueError(f"Bad RP column name: {col_name!r}")
+    tree_id, node_path = parts[0], parts[1]
+    if tree_id not in proj_by_tree_id:
+        keys = sorted(proj_by_tree_id.keys())
+        sample = keys[: min(8, len(keys))]
+        raise KeyError(
+            f"Unknown RP tree_id {tree_id!r} in column {col_name!r}. "
+            f"Sample keys: {sample}"
+        )
+    proj = proj_by_tree_id[tree_id]
+    depth = len(node_path) - 1
+    if depth < 1:
+        raise ValueError(f"Bad RP node_path in column: {col_name!r}")
+    directions = [int(d) for d in node_path[1:]]
+    node_num = 1
+    for k_, d in enumerate(directions):
+        node_num += (d - 1) * (Q_NUM ** (depth - 1 - k_))
+    feat_list = list(feat_cols)
+    if proj.shape[1] != len(feat_list):
+        raise ValueError(
+            f"Projection width {proj.shape[1]} != len(feat_cols)={len(feat_list)} "
+            f"for column {col_name!r}"
+        )
+    return feat_list, depth, node_num, proj
+
+
 # ── Stock value-weights for one portfolio in one month ─────────────────────────
 
 def get_stock_value_weights(month_panel: pd.DataFrame,
@@ -74,6 +139,28 @@ def get_stock_value_weights(month_panel: pd.DataFrame,
     if total_size == 0:
         return pd.Series(dtype=float)
     return subset.set_index('permno')['size'] / total_size
+
+
+def get_stock_value_weights_rp(
+    month_panel: pd.DataFrame,
+    feat_cols: list[str],
+    proj_matrix: np.ndarray,
+    depth: int,
+    node_num: int,
+) -> pd.Series:
+    """
+    Value-weights for stocks in one RP-tree node for one month (true RP partition).
+    """
+    df = assign_nodes_month_rp(
+        month_panel, feat_cols, proj_matrix, TREE_DEPTH, Q_NUM
+    )
+    subset = df[df[f"port{depth}"] == node_num]
+    if subset.empty:
+        return pd.Series(dtype=float)
+    total_size = subset["size"].sum()
+    if total_size == 0:
+        return pd.Series(dtype=float)
+    return subset.set_index("permno")["size"] / total_size
 
 
 # ── Calendar month index ───────────────────────────────────────────────────────
@@ -118,7 +205,9 @@ def _run_tc_loop(
     gross_ret : (T_test,)    SDF excess return each month
     sdf_w_mat : (T_test, J)  SDF weights per month (constant rows for uniform)
     port_cols : column names matching sdf_w_mat columns
-    col_info  : {col: (feat_list, depth, node_num)} pre-decoded
+    col_info  : {col: (feat_list, depth, node_num)} for AP/median trees, or
+                {col: (feat_list, depth, node_num, proj_matrix)} for RP columns
+                (same TC formula; stock sets from ``assign_nodes_month_rp``).
     panel     : test-period stock panel
     test_yy/mm: plain Python int lists, length T_test
 
@@ -163,8 +252,17 @@ def _run_tc_loop(
             w_j = float(sdf_w_mat[t, col_idx])
             if w_j == 0.0:
                 continue
-            feat_list, depth, node_num = col_info[col]
-            stock_vw = get_stock_value_weights(month_panel, feat_list, depth, node_num)
+            meta = col_info[col]
+            if len(meta) == 4:
+                feat_list, depth, node_num, proj_m = meta
+                stock_vw = get_stock_value_weights_rp(
+                    month_panel, feat_list, proj_m, depth, node_num
+                )
+            else:
+                feat_list, depth, node_num = meta
+                stock_vw = get_stock_value_weights(
+                    month_panel, feat_list, depth, node_num
+                )
 
             for permno, vw in stock_vw.items():
                 vw_f = float(vw)
