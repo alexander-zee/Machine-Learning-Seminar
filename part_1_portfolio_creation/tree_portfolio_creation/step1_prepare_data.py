@@ -40,6 +40,43 @@ IDIOVOL_MIN_PERIODS = 36
 _FF3_COLS = ['Mkt-RF', 'SMB', 'HML']
 
 
+def apply_beme_december_lag(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Replace monthly BEME with an annual snapshot based on previous December.
+
+    Rationale
+    ---------
+    Bryzgalova et al. and related AP-tree work define BEME using accounting data with
+    market equity as of December t-1, and use characteristics known at t-1 for returns in t.
+    Using rapidly-updating same-month BEME can inject look-ahead-like timing artifacts.
+
+    Construction
+    ------------
+    For each stock (permno) and calendar year t, use BEME observed in December of t-1 for
+    all months in year t.
+    """
+    if "BEME" not in df.columns:
+        return df
+
+    out = df.copy()
+    before_non_na = int(out["BEME"].notna().sum())
+
+    dec_snap = out.loc[out["mm"] == 12, ["permno", "yy", "BEME"]].copy()
+    dec_snap["yy"] = dec_snap["yy"] + 1
+    dec_snap = dec_snap.rename(columns={"BEME": "BEME_dec_lag"})
+
+    out = out.merge(dec_snap, on=["permno", "yy"], how="left")
+    out["BEME"] = out["BEME_dec_lag"]
+    out = out.drop(columns=["BEME_dec_lag"])
+
+    after_non_na = int(out["BEME"].notna().sum())
+    print(
+        "Applied BEME annual timing: using December t-1 snapshot for year t "
+        f"(non-NaN before={before_non_na:,}, after={after_non_na:,})"
+    )
+    return out
+
+
 def _load_ff3_monthly() -> pd.DataFrame:
     """
     Monthly Fama–French 3 factors, index int yyyymm, columns in decimals (not %).
@@ -141,7 +178,7 @@ def convert_quantile(series):
     return result
 
 
-def prepare_data():
+def prepare_data(*, use_beme_december_lag: bool = True):
     print("Loading raw data...")
     df = pd.read_csv(RAW_PATH)
     df = df.rename(columns=COLUMN_MAP)
@@ -153,6 +190,9 @@ def prepare_data():
     df = df[(df['yy'] >= Y_MIN) & (df['yy'] <= Y_MAX)].copy()
 
     df['size'] = df['LME'].copy()
+
+    if use_beme_december_lag:
+        df = apply_beme_december_lag(df)
 
     df = attach_idiovol_ff3(df)
 
