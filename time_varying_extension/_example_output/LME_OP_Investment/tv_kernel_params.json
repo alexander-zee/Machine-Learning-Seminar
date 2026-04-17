@@ -1,7 +1,0 @@
-{
-  "bandwidth": 0.058693009448007934,
-  "use_time_decay": false,
-  "time_window_m": 120,
-  "time_decay_lambda": 0.95,
-  "min_train_months": 60
-}

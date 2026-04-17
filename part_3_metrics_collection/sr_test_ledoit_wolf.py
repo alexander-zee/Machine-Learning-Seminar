@@ -474,6 +474,7 @@ if __name__ == "__main__":
     COMPARISONS = [
         ("uniform",     "exponential"),
         ("uniform",     "gaussian"),
+        ("uniform",     "gaussian-tms"),
     ]
 
     for kernel_a, kernel_b in COMPARISONS:

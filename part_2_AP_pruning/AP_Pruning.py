@@ -27,7 +27,8 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
                n_train_valid=360, cvN=3, runFullCV=False, kmin=5, kmax=50,
                RunParallel=False, ParallelN=10, IsTree=True,
                lambda0=None, lambda2=None,
-               kernel_cls=None, state=None, n_bandwidths=None):
+               kernel_cls=None, state=None, n_bandwidths=None,
+               kernel_name_override=None):
     """
     Run AP-Pruning grid search for one triplet across all (lambda0, lambda2, h).
 
@@ -59,7 +60,7 @@ def AP_Pruning(feat1, feat2, input_path, input_file_name, output_path,
 
     # Output subfolder derived from kernel name
     # e.g. UniformKernel -> "uniform", GaussianKernel -> "gaussian"
-    kernel_name = kernel_cls.__name__.lower().replace('kernel', '')
+    kernel_name = kernel_name_override or kernel_cls.__name__.lower().replace('kernel', '')
 
     subdir = '_'.join(['LME', feat1, feat2])
     print(f"AP_Pruning: {subdir}  kernel={kernel_name}")
