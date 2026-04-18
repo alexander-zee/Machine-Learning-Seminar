@@ -5,8 +5,16 @@ One-click helper for the RP **IdioVol** triplets used in Table-style exports.
 What it does (repo root)::
 
   1) Run ``step1_prepare_data.prepare_data()`` (BEME December t-1 lag is default there).
-  2) For each triplet: RP Part 1 + Part 2 (uniform/LASSO grid) via ``run_all_rp_cross_sections.py``.
-  3) Optionally run Gaussian + Exponential kernel batches for the same triplets.
+  2) For each triplet: RP Part 1 + Part 2 (LASSO / pruning grid) via ``run_all_rp_cross_sections.py``.
+  3) By default also runs ``pick_best_lambda`` (``--pick-best``) so ``Selected_Ports_*`` exist for
+     uniform-style SR/alpha exports.
+  4) By default runs kernel full-fit batches: **Gaussian**, **Exponential**, and **Gaussian–TMS**
+     (``standard_gaussian_tms_rp_all.py``; needs ``TMS`` in ``data/state_variables.csv``).
+  5) By default writes **SR + FF5 alpha** artefacts:
+     - ``export_table51_rp_uniform_vs_gaussian.py`` → Uniform + Gaussian + Exponential (36 rows).
+     - ``rp_oos_ff5_multikernel_table.py --kernels gaussian-tms`` → TMS column block (same 36-row order).
+
+Outputs land under ``data/results/diagnostics/table4_rp_ivol_playbook/``.
 
 Typical colleague usage (double-click wrapper on Windows is in ``run_table4_rp_ivol_playbook.ps1``)::
 
@@ -14,14 +22,17 @@ Typical colleague usage (double-click wrapper on Windows is in ``run_table4_rp_i
 
 Advanced::
 
-    python run_table4_rp_ivol_playbook.py --skip-step1 --kernels gaussian
+    python run_table4_rp_ivol_playbook.py --skip-step1 --kernels both
     python run_table4_rp_ivol_playbook.py --include-size-val-ivol
+    python run_table4_rp_ivol_playbook.py --no-pick-best --skip-metrics-export
 
 Notes
 -----
 - Triplet folder names always follow ``canonical_feat_pair`` ordering.
 - ``export_table51_rp_uniform_vs_gaussian.py`` assigns row **Id** after sorting by Uniform SR,
   so the numeric Ids are not stable identifiers. This script uses **internal feature names**.
+- TMS batch writes under ``grid_search/rp_tree/gaussian-tms/``; metrics CSV merges are left to the
+  thesis pipeline if you need a single four-kernel LaTeX table.
 """
 
 from __future__ import annotations
@@ -34,6 +45,10 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parent
+METRICS_OUT = Path("data/results/diagnostics/table4_rp_ivol_playbook")
+
+EXPORT_TABLE51_RP = REPO / "part_3_metrics_collection/export_table51_rp_uniform_vs_gaussian.py"
+MULTIKERNEL_TMS = REPO / "part_3_metrics_collection/rp_oos_ff5_multikernel_table.py"
 
 
 def _run(cmd: list[str], *, env: dict[str, str]) -> None:
@@ -54,14 +69,19 @@ def main() -> None:
     pa.add_argument("--skip-step1", action="store_true", help="Skip step1_prepare_data.")
     pa.add_argument(
         "--kernels",
-        choices=("both", "gaussian", "exponential", "none"),
-        default="both",
-        help="Which kernel full-fit batch to run after RP Part 1+2.",
+        choices=("all", "both", "gaussian", "exponential", "tms", "none"),
+        default="all",
+        help=(
+            "Kernel full-fit batches after RP Part 1+2. "
+            "'all'=Gaussian+Exponential+Gaussian-TMS (default); "
+            "'both'=Gaussian+Exponential only (legacy); "
+            "'none'=skip kernel batches."
+        ),
     )
     pa.add_argument(
-        "--pick-best",
+        "--no-pick-best",
         action="store_true",
-        help="Also run pick_best_lambda after RP_Pruning (usually not needed before kernel batches).",
+        help="Skip pick_best_lambda after RP_Pruning (default is to run it).",
     )
     pa.add_argument(
         "--include-size-val-ivol",
@@ -69,11 +89,17 @@ def main() -> None:
         help="Also run Size–Val–IVol (BEME–IdioVol). Default excludes it (common exclusion in reruns).",
     )
     pa.add_argument(
+        "--skip-metrics-export",
+        action="store_true",
+        help="Skip SR/alpha CSV exports at the end (export_table51 + multikernel TMS).",
+    )
+    pa.add_argument(
         "--dry-run",
         action="store_true",
         help="Print commands only.",
     )
     args = pa.parse_args()
+    pick_best = not args.no_pick_best
 
     # Internal (code) names — matches ``cross_section_triplets.FEATS_LIST`` / folder names.
     triplets: list[tuple[str, str]] = [
@@ -102,6 +128,9 @@ def main() -> None:
         run_maybe([sys.executable, "part_1_portfolio_creation/tree_portfolio_creation/step1_prepare_data.py"])
 
     py = sys.executable
+    k = 10
+    kernels = args.kernels
+
     for f1, f2 in triplets:
         a, b = canonical_feat_pair(f1, f2)
         run_maybe(
@@ -112,19 +141,84 @@ def main() -> None:
                 a,
                 "--feat2",
                 b,
-                *(["--pick-best"] if args.pick_best else []),
+                *(["--pick-best"] if pick_best else []),
             ]
         )
 
-        if args.kernels in ("both", "gaussian"):
+        if kernels in ("all", "both", "gaussian"):
             run_maybe([py, "standard_gaussian_rp_all.py", "--feat1", a, "--feat2", b])
-        if args.kernels in ("both", "exponential"):
+        if kernels in ("all", "both", "exponential"):
             run_maybe([py, "standard_exponential_rp_all.py", "--feat1", a, "--feat2", b])
+        if kernels in ("all", "tms"):
+            run_maybe([py, "standard_gaussian_tms_rp_all.py", "--feat1", a, "--feat2", b])
 
+    if not args.skip_metrics_export:
+        out_dir = REPO / METRICS_OUT
+        if not args.dry_run:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        table51_csv = out_dir / f"table51_rp_uniform_vs_gaussian_k{k}_all36.csv"
+
+        if EXPORT_TABLE51_RP.is_file():
+            run_maybe(
+                [
+                    py,
+                    "part_3_metrics_collection/export_table51_rp_uniform_vs_gaussian.py",
+                    "--rows",
+                    "all",
+                    "--k",
+                    str(k),
+                    "--out",
+                    str(table51_csv),
+                    "--no-progress",
+                ]
+            )
+        else:
+            print(
+                f"\nWARNING: {EXPORT_TABLE51_RP} not found — skip Uniform/Gaussian/Exponential "
+                "SR+alpha CSV export. Add that script to the repo or copy it from your thesis branch.\n",
+                flush=True,
+            )
+
+        if MULTIKERNEL_TMS.is_file():
+            run_maybe(
+                [
+                    py,
+                    "part_3_metrics_collection/rp_oos_ff5_multikernel_table.py",
+                    "--kernels",
+                    "gaussian-tms",
+                    "--k",
+                    str(k),
+                    "--out-dir",
+                    str(out_dir),
+                    "--no-sleep-guard",
+                ]
+            )
+        else:
+            print(
+                f"\nWARNING: {MULTIKERNEL_TMS} not found — skip Gaussian–TMS SR+alpha CSV export.\n",
+                flush=True,
+            )
+
+    metrics_msg = (
+        f"Metrics CSVs (SR + FF5 alpha): {REPO / METRICS_OUT}\n"
+        f"  - Uniform + Gaussian + Exponential: {METRICS_OUT / f'table51_rp_uniform_vs_gaussian_k{k}_all36.csv'}\n"
+        f"  - Gaussian–TMS (multikernel wide/long): {METRICS_OUT}/rp_oos_ff5_multikernel_*_k{k}.csv\n"
+        if not args.skip_metrics_export
+        else "(Metrics export skipped.)\n"
+    )
+    latex_hint = ""
+    if not args.skip_metrics_export and EXPORT_TABLE51_RP.is_file():
+        latex_hint = (
+            "Optional LaTeX (three kernels) from the table51 CSV:\n"
+            f"  python part_3_metrics_collection/export_table51_rp_uniform_vs_gaussian.py "
+            f"--latex-only-from-csv {METRICS_OUT / f'table51_rp_uniform_vs_gaussian_k{k}_all36.csv'} "
+            f"--latex-out Figures/tables/tab_rp_three_kernels_from_playbook.tex\n"
+        )
     print(
         "\nDone.\n"
-        "Optional table export:\n"
-        "  python part_3_metrics_collection/export_table51_rp_uniform_vs_gaussian.py --rows all --k 10\n",
+        f"Kernel batches: kernels={kernels!r}, pick_best={pick_best}.\n"
+        + metrics_msg
+        + latex_hint,
         flush=True,
     )
 
