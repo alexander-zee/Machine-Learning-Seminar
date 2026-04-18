@@ -5,8 +5,7 @@ Diagnostic module: compute gross vs net Sharpe ratio after accounting for
 proportional transaction costs (Bemelmans et al.).
 
 Single entry point: compute_net_sharpe
-    Works for kernel AND uniform, as both now store the same full_fit_detail
-    format (excess_return + per-portfolio weight columns).
+    Works for kernel AND uniform
 
 $ python -m part_3_metrics_collection.transaction_costs
 """
@@ -357,7 +356,7 @@ if __name__ == '__main__':
         label       = 'gaussian',
     )
 
-    # Uniform — same call, same format after uniform_full_fit.py update
+    # Uniform
     compute_net_sharpe(
         detail_path = BASE / "uniform/LME_OP_Investment/full_fit/full_fit_detail_k10.csv",
         panel_path  = PANEL,

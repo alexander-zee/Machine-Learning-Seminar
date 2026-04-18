@@ -11,7 +11,7 @@ Summary per kernel saved to:
 
 Usage
 -----
-    python tc_batch.py
+    python -m part_3_metrics_collection.tc_batch_runner
 """
 
 from itertools import combinations
@@ -35,7 +35,7 @@ GRID_SEARCH_PATH = Path('data/results/grid_search/tree')
 PANEL_PATH       = Path('data/prepared/panel.parquet')
 N_TRAIN_VALID    = 360
 
-ALL_KERNELS = ['gaussian', 'exponential', 'gaussian-tms', 'uniform']
+ALL_KERNELS = ['gaussian',  'uniform'] #'exponential', 'gaussian-tms',
 
 
 # ── Runner ─────────────────────────────────────────────────────────────────────
