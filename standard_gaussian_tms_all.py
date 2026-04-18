@@ -22,7 +22,7 @@ K_MIN        = 5
 K_MAX        = 50
 PORT_N       = 10
 N_BANDWIDTHS = 5
-N_WORKERS    = 4
+N_WORKERS    = 8
 
 KERNEL_NAME = 'gaussian-tms'
 

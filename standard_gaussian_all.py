@@ -23,7 +23,7 @@ K_MIN        = 5
 K_MAX        = 50
 PORT_N       = 10
 N_BANDWIDTHS = 5
-N_WORKERS    = 4
+N_WORKERS    = 8
 
 TREE_PORT_PATH   = Path('data/results/tree_portfolios')
 GRID_SEARCH_PATH = Path('data/results/grid_search/tree')
