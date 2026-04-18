@@ -10,9 +10,10 @@ What it does (repo root)::
      uniform-style SR/alpha exports.
   4) By default runs kernel full-fit batches: **Gaussian**, **Exponential**, and **Gaussian–TMS**
      (``standard_gaussian_tms_rp_all.py``; needs ``TMS`` in ``data/state_variables.csv``).
+     Use ``--kernels exp-tms`` to run **only** Exponential + Gaussian–TMS (skips Gaussian; saves time).
   5) By default writes **SR + FF5 alpha** artefacts:
      - ``export_table51_rp_uniform_vs_gaussian.py`` → Uniform + Gaussian + Exponential (36 rows).
-     - ``rp_oos_ff5_multikernel_table.py --kernels gaussian-tms`` → TMS column block (same 36-row order).
+     - ``rp_oos_ff5_multikernel_table.py`` → TMS (and Exponential too if ``--kernels exp-tms``).
 
 Outputs land under ``data/results/diagnostics/table4_rp_ivol_playbook/``.
 
@@ -23,6 +24,7 @@ Typical colleague usage (double-click wrapper on Windows is in ``run_table4_rp_i
 Advanced::
 
     python run_table4_rp_ivol_playbook.py --skip-step1 --kernels both
+    python run_table4_rp_ivol_playbook.py --kernels exp-tms
     python run_table4_rp_ivol_playbook.py --include-size-val-ivol
     python run_table4_rp_ivol_playbook.py --no-pick-best --skip-metrics-export
 
@@ -69,12 +71,13 @@ def main() -> None:
     pa.add_argument("--skip-step1", action="store_true", help="Skip step1_prepare_data.")
     pa.add_argument(
         "--kernels",
-        choices=("all", "both", "gaussian", "exponential", "tms", "none"),
+        choices=("all", "both", "exp-tms", "gaussian", "exponential", "tms", "none"),
         default="all",
         help=(
             "Kernel full-fit batches after RP Part 1+2. "
             "'all'=Gaussian+Exponential+Gaussian-TMS (default); "
             "'both'=Gaussian+Exponential only (legacy); "
+            "'exp-tms'=Exponential+Gaussian-TMS only (skip Gaussian; saves time); "
             "'none'=skip kernel batches."
         ),
     )
@@ -147,9 +150,9 @@ def main() -> None:
 
         if kernels in ("all", "both", "gaussian"):
             run_maybe([py, "standard_gaussian_rp_all.py", "--feat1", a, "--feat2", b])
-        if kernels in ("all", "both", "exponential"):
+        if kernels in ("all", "both", "exponential", "exp-tms"):
             run_maybe([py, "standard_exponential_rp_all.py", "--feat1", a, "--feat2", b])
-        if kernels in ("all", "tms"):
+        if kernels in ("all", "tms", "exp-tms"):
             run_maybe([py, "standard_gaussian_tms_rp_all.py", "--feat1", a, "--feat2", b])
 
     if not args.skip_metrics_export:
@@ -180,12 +183,16 @@ def main() -> None:
             )
 
         if MULTIKERNEL_TMS.is_file():
+            mk_kernels = (
+                "exponential",
+                "gaussian-tms",
+            ) if kernels == "exp-tms" else ("gaussian-tms",)
             run_maybe(
                 [
                     py,
                     "part_3_metrics_collection/rp_oos_ff5_multikernel_table.py",
                     "--kernels",
-                    "gaussian-tms",
+                    *mk_kernels,
                     "--k",
                     str(k),
                     "--out-dir",
@@ -195,14 +202,15 @@ def main() -> None:
             )
         else:
             print(
-                f"\nWARNING: {MULTIKERNEL_TMS} not found — skip Gaussian–TMS SR+alpha CSV export.\n",
+                f"\nWARNING: {MULTIKERNEL_TMS} not found — skip multikernel SR+alpha CSV export.\n",
                 flush=True,
             )
 
     metrics_msg = (
         f"Metrics CSVs (SR + FF5 alpha): {REPO / METRICS_OUT}\n"
         f"  - Uniform + Gaussian + Exponential: {METRICS_OUT / f'table51_rp_uniform_vs_gaussian_k{k}_all36.csv'}\n"
-        f"  - Gaussian–TMS (multikernel wide/long): {METRICS_OUT}/rp_oos_ff5_multikernel_*_k{k}.csv\n"
+        f"  - TMS (+ Exponential if --kernels exp-tms) multikernel wide/long: "
+        f"{METRICS_OUT}/rp_oos_ff5_multikernel_*_k{k}.csv\n"
         if not args.skip_metrics_export
         else "(Metrics export skipped.)\n"
     )
