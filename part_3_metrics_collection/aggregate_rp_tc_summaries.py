@@ -48,11 +48,18 @@ def _cross_section_from_path(path: Path, grid_root: Path) -> str | None:
     parts = rel.parts
     if len(parts) < 2:
         return None
-    # .../LME_x_y/tc_summary_*.csv
+    # .../LME_x_y/tc_summary_*.csv  (uniform RP: outputs next to Selected_Ports)
     if parts[0].startswith("LME_") and len(parts) == 2:
         return parts[0]
-    # .../gaussian/LME_x_y/tc_summary_*.csv  (or exponential / gaussian-tms)
+    # .../<kernel>/LME_x_y/tc_summary_*.csv  (unusual)
     if len(parts) == 3 and parts[1].startswith("LME_"):
+        return parts[1]
+    # .../<kernel>/LME_x_y/full_fit/tc_summary_*.csv  (Gaussian / Exp / TMS from tc_batch_runner)
+    if (
+        len(parts) == 4
+        and parts[1].startswith("LME_")
+        and parts[2] == "full_fit"
+    ):
         return parts[1]
     return None
 
