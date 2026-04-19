@@ -62,9 +62,13 @@ RP_PORT_ROOT = Path("data/results/rp_tree_portfolios")
 PANEL_PATH = Path("data/prepared/panel.parquet")
 N_TRAIN_VALID = 360
 
+<<<<<<< HEAD
 KERNEL_KERNELS = ["gaussian", "exponential", "gaussian-tms"]
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+=======
+ALL_KERNELS = ['gaussian', 'exponential', 'gaussian-tms',  'uniform'] 
+>>>>>>> 2d18fd6 (bandwith en outlier diagnostics)
 
 
 def subdir(feat1: str, feat2: str) -> str:

@@ -13,7 +13,7 @@ CONFIG block; the uniform kernel is a useful sanity check (flat heatmap).
 
 Usage
 -----
-     python -m part_3_metrics_collection.visualize_kernel_weights
+     python -m part_4_plots.visualize_kernel_weights
 
 No pipeline re-run needed — reads h from full_fit_summary_k{K}.csv which is
 written by kernel_full_fit at the end of the main run.
@@ -35,8 +35,8 @@ from part_2_AP_pruning.kernels.exponential  import ExponentialKernel
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-FEAT1         = "AC"
-FEAT2         = "LTurnover"
+FEAT1         = "BEME"
+FEAT2         = "LT_Rev"
 K             = 10
 N_TRAIN_VALID = 360
 
