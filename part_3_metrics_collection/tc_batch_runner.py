@@ -63,12 +63,16 @@ PANEL_PATH = Path("data/prepared/panel.parquet")
 N_TRAIN_VALID = 360
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 KERNEL_KERNELS = ["gaussian", "exponential", "gaussian-tms"]
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 =======
 ALL_KERNELS = ['gaussian', 'exponential', 'gaussian-tms',  'uniform'] 
 >>>>>>> 2d18fd6 (bandwith en outlier diagnostics)
+=======
+ALL_KERNELS = ['uniform', 'gaussian-tms'] 
+>>>>>>> 7f299d5 (tc/bandwith/outlier diagnostics)
 
 
 def subdir(feat1: str, feat2: str) -> str:

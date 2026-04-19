@@ -35,8 +35,8 @@ from part_2_AP_pruning.kernels.exponential  import ExponentialKernel
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
-FEAT1         = "BEME"
-FEAT2         = "LT_Rev"
+FEAT1         = "Investment"
+FEAT2         = "LTurnover"
 K             = 10
 N_TRAIN_VALID = 360
 
@@ -46,11 +46,17 @@ OUTPUT_DIR       = Path("data/results/diagnostics/kernel_weights")
 
 Y_MIN, Y_MAX = 1964, 2016
 
+STATE_COL_MAP = {
+    "gaussian":     "svar",
+    "gaussian-tms": "TMS",
+    "exponential":  "svar",
+}
+
 # ── Kernel selection ─────────────────────────────────────────────────────────
 # Choose one.  For kernels with bandwidth, h is read automatically from the
 # full_fit summary CSV written by the pipeline.  For UniformKernel, h=None.
 
-KERNEL_NAME = "gaussian"    # must match the subfolder name in GRID_SEARCH_PATH
+KERNEL_NAME = "gaussian-tms"    # must match the subfolder name in GRID_SEARCH_PATH
                              # "gaussian" | "uniform" | "exponential"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,10 +64,6 @@ KERNEL_NAME = "gaussian"    # must match the subfolder name in GRID_SEARCH_PATH
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_kernel(kernel_name: str, feat1: str, feat2: str, k: int):
-    """
-    Instantiate the correct kernel class with the best bandwidth from the
-    full_fit summary CSV.  UniformKernel needs no bandwidth.
-    """
     if kernel_name == "uniform":
         return UniformKernel()
 
@@ -79,8 +81,10 @@ def _load_kernel(kernel_name: str, feat1: str, feat2: str, k: int):
     h   = float(row["h"])
     print(f"  Loaded best h = {h:.6f}  ({summary})", flush=True)
 
-    if kernel_name == "gaussian":
+    if kernel_name in ("gaussian", "gaussian-tms"):
         return GaussianKernel(h=h)
+    if kernel_name == "exponential":
+        return ExponentialKernel(lam=h, m=N_TRAIN_VALID)
 
     raise ValueError(f"Unknown kernel_name: '{kernel_name}'")
 
@@ -301,7 +305,7 @@ def main(
 
     # 2. Load state variable
     state_df = pd.read_csv(STATE_CSV, index_col="MthCalDt", parse_dates=True)
-    state    = state_df["svar"]
+    state = state_df[STATE_COL_MAP.get(kernel_name, "svar")]
     print(f"  State variable loaded: {len(state)} months", flush=True)
 
     # State diagnostics

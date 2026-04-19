@@ -20,7 +20,7 @@ from pathlib import Path
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 GRID_SEARCH_PATH = Path('data/results/grid_search/tree')
-OUTPUT_PATH      = Path('data/results/figures/tc_scatter.pdf')
+OUTPUT_PATH      = Path('data/results/diagnostics/transaction_costs/tc_scatter.png')
 PORT_N           = 10
 
 KERNELS = ['gaussian', 'exponential', 'gaussian-tms']
@@ -126,16 +126,21 @@ def main():
     ax.legend(loc='lower right', fontsize=9, framealpha=0.9)
 
     # ── Summary table annotation ───────────────────────────────────────────────
+    # Uniform avg SR loss
+    uniform_loss = (uniform['gross_SR_uniform'] - uniform['net_SR_uniform']).mean()
+
     lines = ['Cross-sections beating uniform']
-    lines.append(f"{'Kernel':<16} {'Gross':>6} {'Net':>6}")
-    lines.append('-' * 32)
+    lines.append(f"{'Kernel':<16} {'Gross':>6} {'Net':>6} {'Avg SR loss':>11}")
+    lines.append('-' * 44)
+    lines.append(f"{'Uniform':<16} {'—':>6}  {'—':>6}  {uniform_loss:>10.4f}")
     for kernel in KERNELS:
-        sub     = data[data['kernel'] == kernel]
-        n_gross = (sub['gross_gain'] > 0).sum()
-        n_net   = (sub['net_gain']   > 0).sum()
-        n_total = len(sub)
-        label   = KERNEL_STYLE[kernel]['label']
-        lines.append(f"{label:<16} {n_gross:>3}/{n_total:<3}  {n_net:>3}/{n_total:<3}")
+        sub      = data[data['kernel'] == kernel]
+        n_gross  = (sub['gross_gain'] > 0).sum()
+        n_net    = (sub['net_gain']   > 0).sum()
+        n_total  = len(sub)
+        avg_loss = (sub['gross_SR'] - sub['net_SR']).mean()
+        label    = KERNEL_STYLE[kernel]['label']
+        lines.append(f"{label:<16} {n_gross:>3}/{n_total:<3}  {n_net:>3}/{n_total:<3}  {avg_loss:>10.4f}")
 
     ax.text(
         0.02, 0.98, '\n'.join(lines),
@@ -151,10 +156,8 @@ def main():
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUTPUT_PATH, dpi=150, bbox_inches='tight')
-    fig.savefig(OUTPUT_PATH.with_suffix('.png'), dpi=150, bbox_inches='tight')
     print(f"Saved -> {OUTPUT_PATH}")
-    print(f"Saved -> {OUTPUT_PATH.with_suffix('.png')}")
-    plt.show()
+    plt.close(fig)
 
 
 if __name__ == '__main__':

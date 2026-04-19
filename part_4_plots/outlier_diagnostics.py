@@ -31,9 +31,9 @@ import matplotlib.dates as mdates
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG  ← swap these to analyse a different cross-section / kernel
 # ─────────────────────────────────────────────────────────────────────────────
-FEAT1         = "BEME"
-FEAT2         = "LT_Rev"
-KERNEL_NAME   = "gaussian"   # subfolder name under GRID_SEARCH_PATH
+FEAT1         = "Investment"
+FEAT2         = "LTurnover"
+KERNEL_NAME   = "gaussian-tms"   # subfolder name under GRID_SEARCH_PATH
 STATE_COL     = "svar"       # shown in plot titles only
 K             = 10
 N_TRAIN_VALID = 360
