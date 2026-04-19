@@ -4,15 +4,30 @@ transaction_costs.py
 Diagnostic module: compute gross vs net Sharpe ratio after accounting for
 proportional transaction costs (Bemelmans et al.).
 
-Single entry point: compute_net_sharpe
-    Works for kernel AND uniform
+Main entry points
+-----------------
+compute_net_sharpe
+    AP kernel: per-month SDF weights in ``full_fit_detail`` (median-tree columns).
 
-$ python -m part_3_metrics_collection.transaction_costs
+compute_net_sharpe_rp
+    RP kernel: same CSV shape, but RP column names + ``projection_matrices.npz``.
+    Writes ``transaction_costs_*`` / ``tc_summary_*`` next to the triplet folder
+    ``.../rp_tree/LME_feat1_feat2/`` (same layout as uniform RP), not under ``full_fit/``.
+
+compute_net_sharpe_uniform / compute_net_sharpe_uniform_rp
+    Static SDF weights from ``Selected_Ports_Weights_{k}.csv`` (AP vs RP decoding).
+
+All use ``_run_tc_loop`` + ``_save_results``.
+
+$ python -m part_3_metrics_collection.transaction_costs2
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from typing import Iterable, Optional
 
 from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import (
     assign_nodes_month,
@@ -27,6 +42,46 @@ Y_MIN         = 1964
 Y_MAX         = 2016
 N_TRAIN_VALID = 360
 
+# Columns in ``full_fit_detail`` / ``Selected_Ports`` that are not RP portfolios
+_RP_DETAIL_SKIP_COLS = frozenset({
+    "excess_return",
+    "Date",
+    "date",
+    "MONTH",
+    "month_idx",
+    "MthCalDt",
+    "Unnamed: 0",
+    "index",
+})
+
+
+def _feat_cols_lme_triplet(feat1: str, feat2: str) -> list[str]:
+    """``['LME', a, b]`` with ``(a,b)`` in FEATS_LIST order — matches parquet + RP npz."""
+    from part_1_portfolio_creation.tree_portfolio_creation.cross_section_triplets import (
+        canonical_feat_pair,
+    )
+
+    a, b = canonical_feat_pair(feat1, feat2)
+    return ["LME", a, b]
+
+
+def _rp_portfolio_column_names(columns: Iterable) -> list[str]:
+    """
+    Keep only RP-style basis columns ``{tree_id}.{node_path}`` with a non-trivial
+    node path (depth $\\ge$ 1). Drops ``Date``, ``excess_return``, etc.
+    """
+    out: list[str] = []
+    for c in columns:
+        if c in _RP_DETAIL_SKIP_COLS:
+            continue
+        if not isinstance(c, str) or "." not in c:
+            continue
+        _, node_path = c.split(".", 1)
+        if len(node_path) < 2:
+            continue
+        out.append(c)
+    return out
+
 
 # ── Column name decoder ────────────────────────────────────────────────────────
 
@@ -38,6 +93,12 @@ def decode_column(col_name: str, features: list) -> tuple:
       tree_id   : one digit per depth level (1-3), selects from features list
       node_path : first digit always '1' (root), rest are split directions
                   1 = low half, 2 = high half at that depth
+
+    Returns
+    -------
+    feat_list : list[str]  which feature to split on at each depth
+    depth     : int        number of splits (0 = market portfolio)
+    node_num  : int        1-indexed port{depth} value to filter on
     """
     tree_id, node_path = col_name.split('.')
     feat_list  = [features[int(d) - 1] for d in tree_id]
@@ -50,6 +111,12 @@ def decode_column(col_name: str, features: list) -> tuple:
 
 
 def load_rp_projection_dict(npz_path: Path) -> dict[str, np.ndarray]:
+    """
+    Load ``projection_matrices.npz`` written by ``step2_RP_tree_portfolios``.
+
+    Returns a mapping ``tree_id`` (zero-padded, e.g. ``'04'``) → array of shape
+    ``(tree_depth, n_feats)``.
+    """
     if not npz_path.is_file():
         raise FileNotFoundError(f"RP projection file not found: {npz_path}")
     data = np.load(npz_path)
@@ -61,25 +128,42 @@ def decode_rp_column(
     feat_cols: list[str],
     proj_by_tree_id: dict[str, np.ndarray],
 ) -> tuple[list[str], int, int, np.ndarray]:
+    """
+    Parse an RP combined column ``{tree_id}.{node_path}`` (e.g. ``04.11212``).
+
+    ``tree_id`` must match a key in ``proj_by_tree_id`` (same zero-padding as
+    step2/step3). ``node_path`` uses the usual CNAMES encoding; ``port{depth}``
+    indexing matches ``assign_nodes_month_rp``.
+
+    Returns
+    -------
+    feat_list, depth, node_num, proj_matrix
+        Tuple suitable as one entry in ``col_info`` for ``_run_tc_loop`` (RP row).
+    """
     parts = col_name.split(".", 1)
     if len(parts) != 2:
         raise ValueError(f"Bad RP column name: {col_name!r}")
     tree_id, node_path = parts[0], parts[1]
     if tree_id not in proj_by_tree_id:
         keys = sorted(proj_by_tree_id.keys())
-        raise KeyError(f"Unknown RP tree_id {tree_id!r}. Sample keys: {keys[:8]}")
-    proj  = proj_by_tree_id[tree_id]
+        sample = keys[: min(8, len(keys))]
+        raise KeyError(
+            f"Unknown RP tree_id {tree_id!r} in column {col_name!r}. "
+            f"Sample keys: {sample}"
+        )
+    proj = proj_by_tree_id[tree_id]
     depth = len(node_path) - 1
     if depth < 1:
         raise ValueError(f"Bad RP node_path in column: {col_name!r}")
     directions = [int(d) for d in node_path[1:]]
-    node_num   = 1
+    node_num = 1
     for k_, d in enumerate(directions):
         node_num += (d - 1) * (Q_NUM ** (depth - 1 - k_))
     feat_list = list(feat_cols)
     if proj.shape[1] != len(feat_list):
         raise ValueError(
-            f"Projection width {proj.shape[1]} != len(feat_cols)={len(feat_list)}"
+            f"Projection width {proj.shape[1]} != len(feat_cols)={len(feat_list)} "
+            f"for column {col_name!r}"
         )
     return feat_list, depth, node_num, proj
 
@@ -90,6 +174,10 @@ def get_stock_value_weights(month_panel: pd.DataFrame,
                             feat_list: list,
                             depth: int,
                             node_num: int) -> pd.Series:
+    """
+    Return value-weights (size_i / sum(size)) for stocks in a given node.
+    Series is indexed by permno. Empty if node has no stocks.
+    """
     df     = assign_nodes_month(month_panel, feat_list, TREE_DEPTH, Q_NUM)
     subset = df[df[f'port{depth}'] == node_num]
     if subset.empty:
@@ -107,7 +195,12 @@ def get_stock_value_weights_rp(
     depth: int,
     node_num: int,
 ) -> pd.Series:
-    df = assign_nodes_month_rp(month_panel, feat_cols, proj_matrix, TREE_DEPTH, Q_NUM)
+    """
+    Value-weights for stocks in one RP-tree node for one month (true RP partition).
+    """
+    df = assign_nodes_month_rp(
+        month_panel, feat_cols, proj_matrix, TREE_DEPTH, Q_NUM
+    )
     subset = df[df[f"port{depth}"] == node_num]
     if subset.empty:
         return pd.Series(dtype=float)
@@ -154,12 +247,28 @@ def _run_tc_loop(
     """
     Core month-by-month TC loop.
 
-    VW_prev stores raw value-weights {permno: {col: vw}} without SDF weights,
-    so we can apply the CURRENT month's SDF weights to last month's memberships
-    — correct for time-varying kernels where w_j^MVE changes every month.
+    Parameters
+    ----------
+    gross_ret : (T_test,)    SDF excess return each month
+    sdf_w_mat : (T_test, J)  SDF weights per month (constant rows for uniform)
+    port_cols : column names matching sdf_w_mat columns
+    col_info  : {col: (feat_list, depth, node_num)} for AP/median trees, or
+                {col: (feat_list, depth, node_num, proj_matrix)} for RP columns
+                (same TC formula; stock sets from ``assign_nodes_month_rp``).
+    panel     : test-period stock panel
+    test_yy/mm: plain Python int lists, length T_test
+
+    Returns
+    -------
+    tc_series : (T_test,) transaction cost each month
     """
     T_test    = len(gross_ret)
     tc_series = np.zeros(T_test)
+
+    # VW_prev stores RAW value-weights from last month, without SDF weights applied.
+    # Structure: {permno: {col: vw}}
+    # This lets us apply the CURRENT month's SDF weights to last month's stock
+    # memberships when computing the drift — correct for time-varying SDF weights.
     VW_prev: dict = {}
 
     for t in range(T_test):
@@ -173,12 +282,16 @@ def _run_tc_loop(
             VW_prev = {}
             continue
 
+        # Rank-normalised market cap → cost parameter (Bemelmans et al. eq. 2)
         N_t = len(month_panel)
         month_panel['me'] = month_panel['size'].rank(method='average') / N_t
         month_panel['c']  = 0.006 - 0.0025 * month_panel['me']
 
         r_mve = float(gross_ret[t])
 
+        # ── Build VW_current and W_current ────────────────────────────────────
+        # VW_current: {permno: {col: vw}}  raw value-weights, stored for next month
+        # W_current:  {permno: float}      combined SDF weight = sum_j(w_j * vw_ij)
         VW_current: dict = {}
         W_current:  dict = {}
 
@@ -200,12 +313,15 @@ def _run_tc_loop(
 
             for permno, vw in stock_vw.items():
                 vw_f = float(vw)
+                # Store raw vw per portfolio (for next month's drift)
                 if permno not in VW_current:
                     VW_current[permno] = {}
                 VW_current[permno][col] = vw_f
+                # Accumulate combined weight
                 W_current[permno] = W_current.get(permno, 0.0) + w_j * vw_f
 
-        # Apply current month's SDF weights to last month's stock memberships
+        # ── Compute W_prev using CURRENT month's SDF weights ──────────────────
+
         W_prev: dict = {}
         for permno, col_vw in VW_prev.items():
             total = 0.0
@@ -217,6 +333,7 @@ def _run_tc_loop(
             if total != 0.0:
                 W_prev[permno] = total
 
+        # ── TC_t = sum_i |W_it - W_drifted_it| * c_it ────────────────────────
         cost_lookup = month_panel.set_index('permno')['c'].to_dict()
         ret_lookup  = month_panel.set_index('permno')['ret'].to_dict()
         tc_t = 0.0
@@ -229,7 +346,7 @@ def _run_tc_loop(
             tc_t     += abs(W_it - W_drifted) * cost_lookup.get(permno, 0.0)
 
         tc_series[t] = tc_t
-        VW_prev = VW_current
+        VW_prev = VW_current   # carry forward raw weights for next month
 
         if t == 0 or (t + 1) % 20 == 0:
             print(f"  t={t+1:3d}/{T_test}  [{yy}-{mm:02d}]  "
@@ -253,12 +370,12 @@ def _save_results(
     gross_SR = float(gross_ret.mean() / gross_ret.std(ddof=1))
     net_SR   = float(net_ret.mean()   / net_ret.std(ddof=1))
 
-    print(f"\n{'─'*45}  {label}")
+    print(f"\n{'-'*45}  {label}")
     print(f"  Gross SR      : {gross_SR:.4f}")
     print(f"  Net SR        : {net_SR:.4f}")
     print(f"  Mean TC/month : {tc_series.mean():.6f}")
     print(f"  SR loss       : {gross_SR - net_SR:.4f}")
-    print(f"{'─'*45}")
+    print(f"{'-'*45}")
 
     suffix = f"_{label}" if label else ""
     pd.DataFrame({
@@ -279,8 +396,8 @@ def _save_results(
         'total_TC': float(tc_series.sum()),
     }]).to_csv(out_dir / f'tc_summary_{k_tag}{suffix}.csv', index=False)
 
-    print(f"  Saved → {out_dir / f'transaction_costs_{k_tag}{suffix}.csv'}")
-    print(f"  Saved → {out_dir / f'tc_summary_{k_tag}{suffix}.csv'}")
+    print(f"  Saved -> {out_dir / f'transaction_costs_{k_tag}{suffix}.csv'}")
+    print(f"  Saved -> {out_dir / f'tc_summary_{k_tag}{suffix}.csv'}")
 
     return {
         'gross_SR':      gross_SR,
@@ -291,7 +408,7 @@ def _save_results(
     }
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Entry point 1: kernel ──────────────────────────────────────────────────────
 
 def compute_net_sharpe(
     detail_path:   Path,
@@ -301,13 +418,11 @@ def compute_net_sharpe(
     label:         str = '',
 ) -> dict:
     """
-    Compute net SR for any SDF estimator whose full_fit_detail CSV has format:
-        excess_return, <port_col_1>, ..., <port_col_N>
+    Compute net SR for a kernel SDF.
 
-    Works for kernel (time-varying weights) and uniform (constant weights),
-    as both now store the same detail format after the uniform_full_fit update.
-
-    Raises ValueError if row count != expected test months (skipped LARS months).
+    detail_path : full_fit_detail_k{k}.csv
+                  T_test rows × (excess_return + one column per portfolio)
+    label       : string tag written into output filenames, e.g. 'gaussian'
     """
     detail    = pd.read_csv(detail_path)
     port_cols = [c for c in detail.columns if c != 'excess_return']
@@ -341,6 +456,232 @@ def compute_net_sharpe(
                          detail_path.parent, k_tag, label)
 
 
+def _rp_kernel_tc_output_dir(detail_path: Path, cross_section: str) -> Path:
+    """
+    Map ``.../rp_tree/<kernel>/LME_feat1_feat2/full_fit/full_fit_detail_k{k}.csv`` to
+    ``.../rp_tree/LME_feat1_feat2/`` — same directory layout as uniform RP TC outputs.
+    """
+    p = detail_path.resolve()
+    if p.parent.name != "full_fit":
+        raise ValueError(
+            "RP kernel TC expects ``full_fit_detail`` under a folder named 'full_fit'; "
+            f"got parent {p.parent.name!r} for {detail_path}"
+        )
+    kernel_branch = p.parent.parent  # .../<kernel>/LME_*
+    if not kernel_branch.name.startswith("LME_"):
+        raise ValueError(
+            "RP kernel TC expected path .../<kernel>/LME_*/full_fit/detail.csv; "
+            f"resolved {kernel_branch} from {detail_path}"
+        )
+    grid_root = kernel_branch.parent.parent  # .../rp_tree
+    return grid_root / cross_section
+
+
+def compute_net_sharpe_rp(
+    detail_path: Path,
+    panel_path: Path,
+    cross_section: str,
+    feat1: str,
+    feat2: str,
+    rp_portfolios_root: Optional[Path] = None,
+    n_train_valid: int = N_TRAIN_VALID,
+    label: str = '',
+) -> dict:
+    """
+    Same as ``compute_net_sharpe`` but for **RP-tree** ``full_fit_detail`` files.
+
+    ``cross_section`` must match the RP portfolio folder name (e.g. ``LME_OP_AC``),
+    i.e. the same string used under ``data/results/grid_search/rp_tree/``.
+    ``feat1``/``feat2`` are the same characteristic codes used elsewhere; panel
+    columns are ``['LME', canonical(feat1), canonical(feat2)]`` (do **not** split
+    ``cross_section`` on underscores — names like ``r12_2`` break naive splits).
+
+    Column names use the ``{tree_id}.{node_path}`` convention; stock membership
+    is recovered via ``assign_nodes_month_rp`` using ``projection_matrices.npz``
+    from ``step2_RP_tree_portfolios`` (under ``rp_portfolios_root``).
+    """
+    if rp_portfolios_root is None:
+        rp_portfolios_root = Path("data/results/rp_tree_portfolios")
+
+    feat_cols = _feat_cols_lme_triplet(feat1, feat2)
+
+    npz_path = rp_portfolios_root / cross_section / "projection_matrices.npz"
+    proj_by_tree_id = load_rp_projection_dict(npz_path)
+
+    detail = pd.read_csv(detail_path)
+    port_cols = _rp_portfolio_column_names(detail.columns)
+    if not port_cols:
+        raise ValueError(
+            f"No usable RP portfolio columns in {detail_path} "
+            f"(after dropping Date / metadata)."
+        )
+    gross_ret = detail["excess_return"].to_numpy(dtype=float)
+    T_test = len(detail)
+
+    all_months = _build_month_index()
+    T_test_expected = len(all_months) - n_train_valid
+    if T_test != T_test_expected:
+        raise ValueError(
+            f"Cannot compute TC for {detail_path.name}: "
+            f"expected {T_test_expected} rows but found {T_test}. "
+            f"One or more months were skipped during LARS. "
+            f"Re-run kernel_full_fit with month_idx tracking before computing TC."
+        )
+
+    test_months = all_months.iloc[n_train_valid:].reset_index(drop=True)
+    panel = _load_panel(panel_path, feat_cols, test_months)
+    col_info: dict = {}
+    for col in port_cols:
+        try:
+            col_info[col] = decode_rp_column(col, feat_cols, proj_by_tree_id)
+        except (ValueError, KeyError):
+            continue
+    port_cols = list(col_info.keys())
+    if not port_cols:
+        raise ValueError(f"No decodable RP portfolio columns in {detail_path}")
+    sdf_w_mat = detail[port_cols].to_numpy(dtype=float)
+    test_yy = test_months["yy"].to_numpy(dtype=int).tolist()
+    test_mm = test_months["mm"].to_numpy(dtype=int).tolist()
+
+    tc_series = _run_tc_loop(
+        gross_ret, sdf_w_mat, port_cols, col_info, panel, test_yy, test_mm
+    )
+
+    k_tag = detail_path.stem.split("_")[-1]
+    out_dir = _rp_kernel_tc_output_dir(detail_path, cross_section)
+    return _save_results(gross_ret, tc_series, test_months, out_dir, k_tag, label)
+
+
+# ── Entry point 2: uniform (static weights) ───────────────────────────────────
+
+def compute_net_sharpe_uniform(
+    ports_path:    Path,
+    weights_path:  Path,
+    panel_path:    Path,
+    features:      list,
+    n_train_valid: int = N_TRAIN_VALID,
+    label:         str = 'uniform',
+) -> dict:
+    """
+    Compute net SR for the uniform (static) SDF.
+
+    ports_path    : Selected_Ports_{k}.csv
+                    636 rows × k columns — full-period portfolio returns
+    weights_path  : Selected_Ports_Weights_{k}.csv
+                    k rows, single column — fixed SDF weights
+    """
+    ports_full = pd.read_csv(ports_path, header=0)
+    port_cols  = ports_full.columns.tolist()
+    ports_test = ports_full.iloc[n_train_valid:].reset_index(drop=True)
+    T_test     = len(ports_test)
+
+    sdf_w_fixed = pd.read_csv(weights_path, header=0).to_numpy(dtype=float).flatten()
+    if len(sdf_w_fixed) != len(port_cols):
+        raise ValueError(
+            f"weights file has {len(sdf_w_fixed)} entries but ports file has "
+            f"{len(port_cols)} columns."
+        )
+
+    gross_ret = ports_test.to_numpy(dtype=float) @ sdf_w_fixed   # (T_test,)
+    sdf_w_mat = np.tile(sdf_w_fixed, (T_test, 1))                 # (T_test, k)
+
+    all_months  = _build_month_index()
+    test_months = all_months.iloc[n_train_valid:n_train_valid + T_test].reset_index(drop=True)
+
+    panel    = _load_panel(panel_path, features, test_months)
+    col_info = {col: decode_column(col, features) for col in port_cols}
+    test_yy  = test_months['yy'].to_numpy(dtype=int).tolist()
+    test_mm  = test_months['mm'].to_numpy(dtype=int).tolist()
+
+    tc_series = _run_tc_loop(gross_ret, sdf_w_mat, port_cols, col_info,
+                             panel, test_yy, test_mm)
+
+    k_tag   = f"k{len(port_cols)}"
+    out_dir = ports_path.parent
+    return _save_results(gross_ret, tc_series, test_months, out_dir, k_tag, label)
+
+
+def compute_net_sharpe_uniform_rp(
+    ports_path: Path,
+    weights_path: Path,
+    panel_path: Path,
+    cross_section: str,
+    feat1: str,
+    feat2: str,
+    rp_portfolios_root: Optional[Path] = None,
+    n_train_valid: int = N_TRAIN_VALID,
+    label: str = "uniform",
+) -> dict:
+    """
+    Uniform (static) SDF weights on **RP** basis portfolios: same economics as
+    ``compute_net_sharpe_uniform`` but with RP column decoding and projections.
+    """
+    if rp_portfolios_root is None:
+        rp_portfolios_root = Path("data/results/rp_tree_portfolios")
+
+    feat_cols = _feat_cols_lme_triplet(feat1, feat2)
+    npz_path = rp_portfolios_root / cross_section / "projection_matrices.npz"
+    proj_by_tree_id = load_rp_projection_dict(npz_path)
+
+    ports_full = pd.read_csv(ports_path, header=0)
+    all_cols = ports_full.columns.tolist()
+    port_cols = _rp_portfolio_column_names(all_cols)
+    if not port_cols:
+        raise ValueError(
+            f"No usable RP portfolio columns in {ports_path} (after dropping metadata)."
+        )
+
+    w_raw = pd.read_csv(weights_path, header=0).to_numpy(dtype=float).flatten()
+    if len(w_raw) == len(all_cols):
+        w_aligned = np.array([w_raw[all_cols.index(c)] for c in port_cols], dtype=float)
+    elif len(w_raw) == len(port_cols):
+        w_aligned = w_raw.astype(float)
+    else:
+        raise ValueError(
+            f"Weights length {len(w_raw)} does not match ports "
+            f"(all columns {len(all_cols)} or RP columns {len(port_cols)})."
+        )
+
+    col_info: dict = {}
+    dec_cols: list[str] = []
+    dec_w: list[float] = []
+    for i, col in enumerate(port_cols):
+        try:
+            col_info[col] = decode_rp_column(col, feat_cols, proj_by_tree_id)
+            dec_cols.append(col)
+            dec_w.append(float(w_aligned[i]))
+        except (ValueError, KeyError):
+            continue
+    if not dec_cols:
+        raise ValueError(f"No decodable RP portfolio columns in {ports_path}")
+    port_cols = dec_cols
+    sdf_w_fixed = np.array(dec_w, dtype=float)
+
+    ports_subset = ports_full[port_cols]
+    ports_test = ports_subset.iloc[n_train_valid:].reset_index(drop=True)
+    T_test = len(ports_test)
+
+    gross_ret = ports_test.to_numpy(dtype=float) @ sdf_w_fixed
+    sdf_w_mat = np.tile(sdf_w_fixed, (T_test, 1))
+
+    all_months = _build_month_index()
+    test_months = all_months.iloc[n_train_valid : n_train_valid + T_test].reset_index(
+        drop=True
+    )
+
+    panel = _load_panel(panel_path, feat_cols, test_months)
+    test_yy = test_months["yy"].to_numpy(dtype=int).tolist()
+    test_mm = test_months["mm"].to_numpy(dtype=int).tolist()
+
+    tc_series = _run_tc_loop(
+        gross_ret, sdf_w_mat, port_cols, col_info, panel, test_yy, test_mm
+    )
+
+    k_tag = f"k{len(port_cols)}"
+    out_dir = ports_path.parent
+    return _save_results(gross_ret, tc_series, test_months, out_dir, k_tag, label)
+
+
 # ── Quick run ──────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
@@ -348,7 +689,6 @@ if __name__ == '__main__':
     PANEL = Path("data/prepared/panel.parquet")
     FEATS = ['LME', 'OP', 'Investment']
 
-    # Kernel
     compute_net_sharpe(
         detail_path = BASE / "gaussian/LME_OP_Investment/full_fit/full_fit_detail_k10.csv",
         panel_path  = PANEL,
@@ -356,10 +696,9 @@ if __name__ == '__main__':
         label       = 'gaussian',
     )
 
-    # Uniform
-    compute_net_sharpe(
-        detail_path = BASE / "uniform/LME_OP_Investment/full_fit/full_fit_detail_k10.csv",
-        panel_path  = PANEL,
-        features    = FEATS,
-        label       = 'uniform',
+    compute_net_sharpe_uniform(
+        ports_path   = BASE / "uniform/LME_OP_Investment/Selected_Ports_10.csv",
+        weights_path = BASE / "uniform/LME_OP_Investment/Selected_Ports_Weights_10.csv",
+        panel_path   = PANEL,
+        features     = FEATS,
     )

@@ -10,7 +10,10 @@ Looks for files named::
 Examples::
 
     data/results/grid_search/rp_tree/LME_ST_Rev_LT_Rev/tc_summary_k10_uniform.csv
-    data/results/grid_search/rp_tree/gaussian/LME_OP_AC/tc_summary_k10_gaussian.csv
+    data/results/grid_search/rp_tree/LME_ST_Rev_LT_Rev/tc_summary_k10_gaussian.csv
+
+(Legacy paths under ``<kernel>/LME_*/full_fit/`` are still picked up if present; flat
+``LME_*`` rows win on duplicates.)
 
 Skips batch roll-ups like ``uniform/tc_summary_all_k10.csv`` (different layout).
 
@@ -85,12 +88,20 @@ def _parse_kernel_from_stem(stem: str) -> str | None:
 def collect_summaries(*, grid_root: Path, k: int) -> pd.DataFrame:
     pattern = f"tc_summary_k{k}_*.csv"
     rows: list[dict] = []
-    for path in sorted(grid_root.rglob(pattern)):
+    seen: set[tuple[str, str]] = set()
+    paths = sorted(
+        grid_root.rglob(pattern),
+        key=lambda p: (1 if "full_fit" in p.parts else 0, str(p)),
+    )
+    for path in paths:
         if "tc_summary_all" in path.name:
             continue
         cs = _cross_section_from_path(path, grid_root)
         kernel = _parse_kernel_from_stem(path.stem)
         if cs is None or kernel is None:
+            continue
+        dedupe_key = (cs, kernel)
+        if dedupe_key in seen:
             continue
         try:
             df = pd.read_csv(path)
@@ -104,6 +115,7 @@ def collect_summaries(*, grid_root: Path, k: int) -> pd.DataFrame:
         rec["kernel"] = kernel
         rec["source_file"] = str(path.as_posix())
         rows.append(rec)
+        seen.add(dedupe_key)
     if not rows:
         return pd.DataFrame()
     out = pd.DataFrame(rows)
@@ -127,7 +139,11 @@ def collect_transaction_costs_wide(
     pattern = f"transaction_costs_k{k}_{kernel_label}.csv"
     merged: pd.DataFrame | None = None
     keys = ("yy", "mm")
-    for path in sorted(grid_root.rglob(pattern)):
+    paths = sorted(
+        grid_root.rglob(pattern),
+        key=lambda p: (1 if "full_fit" in p.parts else 0, str(p)),
+    )
+    for path in paths:
         if "diagnostics" in path.parts:
             continue
         cs = _cross_section_from_path(path, grid_root)
@@ -140,6 +156,12 @@ def collect_transaction_costs_wide(
             continue
         if df.empty or not all(c in df.columns for c in keys):
             continue
+        if merged is not None:
+            if metric == "all":
+                if f"{cs}_net_return" in merged.columns:
+                    continue
+            elif cs in merged.columns:
+                continue
         if metric == "all":
             need = ["gross_return", "tc", "net_return"]
             if not all(c in df.columns for c in need):
