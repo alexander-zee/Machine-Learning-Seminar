@@ -7,6 +7,10 @@ This script is **self-contained**: it does **not** import or modify
 ``ff5_batch_regression.py``. It reads the same inputs:
 
   ``data/results/grid_search/rp_tree/<kernel>/LME_* /full_fit/full_fit_detail_k{k}.csv``
+
+  For kernel **uniform**, RP grids often omit ``.../uniform/LME_*/full_fit/``; the script then
+  falls back to **master test returns** from ``Selected_Ports`` + ``rp_tree_portfolios`` (same
+  idea as ``export_table51_rp_uniform_vs_gaussian``).
   ``data/raw/F-F_Research_Data_5_Factors_2x3.csv``
 
 Row **Id** order matches ``\\label{tab:rp_uniform_vs_gaussian}`` in the draft (36 triplets;
@@ -156,8 +160,35 @@ def _load_ff5_panel(csv_override: Path | None) -> tuple[pd.DataFrame, str]:
     return _load_ff5_from_datareader(), "pandas_datareader (F-F_Research_Data_5_Factors_2x3)"
 
 
+def _full_fit_detail_path(grid_root: Path, kernel_name: str, subdir: str, k: int) -> Path:
+    """Default: ``<grid_root>/<kernel>/LME_*/full_fit/full_fit_detail_k{k}.csv``."""
+    return grid_root / kernel_name / subdir / "full_fit" / f"full_fit_detail_k{k}.csv"
+
+
+def _resolve_detail_path(grid_root: Path, kernel_name: str, subdir: str, k: int) -> Path | None:
+    """
+    Return path to ``full_fit_detail`` if it exists.
+
+    RP **uniform** pruning lives under ``rp_tree/LME_*`` (flat). Some repos also mirror
+    AP layout as ``rp_tree/uniform/LME_*``. Try both before giving up.
+    """
+    p = _full_fit_detail_path(grid_root, kernel_name, subdir, k)
+    if p.is_file():
+        return p
+    if kernel_name == "uniform":
+        flat = grid_root / subdir / "full_fit" / f"full_fit_detail_k{k}.csv"
+        if flat.is_file():
+            return flat
+    return None
+
+
 def _load_hyperparams(grid_root: Path, kernel_name: str, subdir: str, k: int) -> dict:
     path = grid_root / kernel_name / subdir / "full_fit" / f"full_fit_summary_k{k}.csv"
+    if not path.is_file():
+        if kernel_name == "uniform":
+            flat = grid_root / subdir / "full_fit" / f"full_fit_summary_k{k}.csv"
+            if flat.is_file():
+                path = flat
     if not path.is_file():
         return {"lambda0": None, "lambda2": None, "h": None}
     row = pd.read_csv(path).iloc[0]
@@ -171,6 +202,75 @@ def _load_hyperparams(grid_root: Path, kernel_name: str, subdir: str, k: int) ->
     }
 
 
+def _regress_uniform_via_master(
+    grid_root: Path,
+    feat1: str,
+    feat2: str,
+    k: int,
+    ff5: pd.DataFrame,
+    ports_dir: Path,
+    port_name: str,
+    n_train_valid: int,
+    base: dict,
+) -> dict:
+    """
+    RP uniform baseline: no ``uniform/LME_*/full_fit`` file — rebuild OOS test returns
+    from ``Selected_Ports`` / weights + ``rp_tree_portfolios`` (same as table51 export).
+    """
+    from part_3_metrics_collection.ff5 import load_master_test_returns
+
+    try:
+        rets, dates = load_master_test_returns(
+            feat1,
+            feat2,
+            k,
+            grid_root,
+            ports_dir,
+            port_name,
+            n_train_valid=n_train_valid,
+        )
+    except (FileNotFoundError, ValueError, OSError):
+        return {
+            **base,
+            "status": "missing",
+            "sr": np.nan,
+            "alpha_ff5": np.nan,
+            "alpha_ff5_tstat": np.nan,
+        }
+
+    r = np.asarray(rets, dtype=float)
+    d = np.asarray(dates, dtype=np.int64)
+    port_df = pd.DataFrame({"Date": d, "ret": r})
+    merged = pd.merge(port_df, ff5, left_on="Date", right_index=True, how="inner")
+    if merged.empty:
+        return {
+            **base,
+            "status": "merge_failed",
+            "sr": np.nan,
+            "alpha_ff5": np.nan,
+            "alpha_ff5_tstat": np.nan,
+        }
+
+    factor_cols = ["Mkt-RF", "SMB", "HML", "RMW", "CMA"]
+    X = sm.add_constant(merged[factor_cols])
+    Y = merged["ret"]
+    model = sm.OLS(Y, X).fit()
+    rr = merged["ret"]
+    std_r = rr.std(ddof=1)
+    sr = float(rr.mean() / std_r) if std_r > 0 else float("nan")
+    hp = _load_hyperparams(grid_root, "uniform", base["cross_section"], k)
+    return {
+        **base,
+        "status": "ok",
+        "sr": sr,
+        "alpha_ff5": float(model.params["const"]),
+        "alpha_ff5_tstat": float(model.tvalues["const"]),
+        "lambda0": hp["lambda0"],
+        "lambda2": hp["lambda2"],
+        "h": hp["h"],
+    }
+
+
 def _regress_one(
     grid_root: Path,
     kernel_name: str,
@@ -180,15 +280,23 @@ def _regress_one(
     ff5: pd.DataFrame,
     all_dates: np.ndarray,
     k: int,
+    *,
+    ports_dir: Path | None,
+    port_name: str,
+    n_train_valid: int,
 ) -> dict:
-    detail_path = grid_root / kernel_name / subdir / "full_fit" / f"full_fit_detail_k{k}.csv"
     base = {
         "cross_section": subdir,
         "char1": "LME",
         "char2": feat1,
         "char3": feat2,
     }
-    if not detail_path.is_file():
+    detail_path = _resolve_detail_path(grid_root, kernel_name, subdir, k)
+    if detail_path is None:
+        if kernel_name == "uniform" and ports_dir is not None:
+            return _regress_uniform_via_master(
+                grid_root, feat1, feat2, k, ff5, ports_dir, port_name, n_train_valid, base
+            )
         return {
             **base,
             "status": "missing",
@@ -289,6 +397,30 @@ def main() -> None:
             f"If omitted, uses {FF5_CSV} when present; otherwise downloads factors via pandas_datareader."
         ),
     )
+    pa.add_argument(
+        "--grid-root",
+        type=Path,
+        default=RP_GRID,
+        help="RP grid root (default: data/results/grid_search/rp_tree).",
+    )
+    pa.add_argument(
+        "--ports-dir",
+        type=Path,
+        default=Path("data/results/rp_tree_portfolios"),
+        help="RP Part 1 portfolios; used for uniform kernel when full_fit_detail is absent.",
+    )
+    pa.add_argument(
+        "--port-name",
+        type=str,
+        default="level_all_excess_combined.csv",
+        help="Combined excess returns file under each LME_* portfolio folder.",
+    )
+    pa.add_argument(
+        "--n-train-valid",
+        type=int,
+        default=N_TRAIN_VALID,
+        help="Train+valid window length (default 360); test returns start after this.",
+    )
     args = pa.parse_args()
 
     table_rows = THESIS_TABLE_ROWS
@@ -313,7 +445,19 @@ def main() -> None:
             print(f"\nKernel: {kn}", flush=True)
             for row_id, lab2, lab3 in table_rows:
                 subdir, f1, f2 = _subdir_from_labels(lab2, lab3)
-                out = _regress_one(RP_GRID, kn, subdir, f1, f2, ff5, all_dates, args.k)
+                out = _regress_one(
+                    args.grid_root,
+                    kn,
+                    subdir,
+                    f1,
+                    f2,
+                    ff5,
+                    all_dates,
+                    args.k,
+                    ports_dir=args.ports_dir,
+                    port_name=args.port_name,
+                    n_train_valid=args.n_train_valid,
+                )
                 long_rows.append(
                     {
                         "Id": row_id,
@@ -342,7 +486,7 @@ def main() -> None:
     long_df = pd.DataFrame(long_rows)
     long_path = args.out_dir / f"rp_oos_ff5_multikernel_long_k{args.k}{out_suffix}.csv"
     long_df.to_csv(long_path, index=False)
-    print(f"\nLong format → {long_path}", flush=True)
+    print(f"\nLong format -> {long_path}", flush=True)
 
     # Wide: one row per Id, kernels as columns
     wide = long_df.pivot_table(
@@ -363,7 +507,7 @@ def main() -> None:
     wide = wide[["Id", "Char2_display", "Char3_display", *present]]
     wide_path = args.out_dir / f"rp_oos_ff5_multikernel_wide_k{args.k}{out_suffix}.csv"
     wide.to_csv(wide_path, index=False)
-    print(f"Wide format  → {wide_path}", flush=True)
+    print(f"Wide format  -> {wide_path}", flush=True)
 
     if args.print_latex:
         # Build lookup (Id, kernel) -> record
