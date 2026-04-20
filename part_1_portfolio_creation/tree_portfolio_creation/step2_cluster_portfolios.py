@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from tqdm import tqdm
 
-# --- PADEN (Aangepast naar jouw nieuwe MICE file) ---
+# --- PADEN  ---
 SCRIPT_DIR = Path(__file__).parent.absolute()
 # We gaan vanuit tree_portfolio_creation naar de data map
 INPUT_PATH = SCRIPT_DIR.parent.parent / 'data' / 'prepared' / 'panel_clustering_mice.parquet'

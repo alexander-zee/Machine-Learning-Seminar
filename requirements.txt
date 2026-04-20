@@ -1,12 +1,24 @@
-jupyter
-pandas 
-pandas_datareader
-numpy 
-matplotlib 
-seaborn
-pyarrow
-pytest
-scikit-learn
+# Core data & numerics
+numpy
+pandas
+pyarrow          # parquet I/O (panel.parquet)
 scipy
-tqdm
-product
+
+# Machine learning
+scikit-learn     # LARS, AgglomerativeClustering, IterativeImputer (MICE)
+statsmodels      # OLS factor regressions
+
+# Parallelism
+joblib           # Parallel / delayed inside pruning loops
+
+# Visualisation
+matplotlib
+seaborn
+
+# Utilities
+tqdm             # Progress bars
+pandas_datareader  # Factor data download (Fama-French)
+
+# Development / testing
+pytest
+jupyter
