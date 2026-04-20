@@ -2,22 +2,13 @@ from pathlib import Path
 # Importeer je nieuwe imputatie script
 from part_1_portfolio_creation.tree_portfolio_creation.step1_prepare_data import prepare_data, build_state_variables
 from part_1_portfolio_creation.tree_portfolio_creation.step1b_impute_data import run_mice_imputation 
-
-from part_1_portfolio_creation.tree_portfolio_creation.step2_tree_portfolios import create_tree_portfolio
-from part_1_portfolio_creation.tree_portfolio_creation.step2_RP_tree_portfolios import create_rp_tree_portfolio
-from part_1_portfolio_creation.tree_portfolio_creation.step2_cluster_portfolios import create_cluster_portfolios
 from part_1_portfolio_creation.tree_portfolio_creation.step2_mice_rp_portfolios import create_mice_rp_tree_portfolio
-from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_trees import combine_trees
-from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_RP_trees import combine_rp_trees
 from part_1_portfolio_creation.tree_portfolio_creation.step3_combine_mice_rp import combine_mice_rp_trees
-from part_1_portfolio_creation.tree_portfolio_creation.step4_filter_portfolios import filter_tree_ports
 
-# AP‑Pruning and metric collection modules
-from part_2_AP_pruning.AP_Pruning import AP_Pruning
-from part_2_AP_pruning.RP_Pruning import RP_Pruning
+#Difference between the mice pruning and ap pruning is due to the file names, as these are in this case not based on triplets
+# n_features based AP‑Pruning and metric collection modules
 from part_2_AP_pruning.Mice_RP_Pruning import Mice_RP_Pruning
 from part_2_AP_pruning.lasso_kernel_full_fit import kernel_full_fit
-from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n, get_mu_sigma
 from part_3_metrics_collection.mice_pick_best_lambdas import mice_pick_best_lambda, mice_pick_sr_n, mice_get_mu_sigma, mice_pick_best_lambda_kernel
 from part_3_metrics_collection.ff5 import evaluate_master_portfolio
 from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
@@ -25,7 +16,6 @@ from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
 from part_2_AP_pruning.kernels.uniform import UniformKernel
 from part_2_AP_pruning.kernels.gaussian import GaussianKernel
 from part_2_AP_pruning.kernels.exponential import ExponentialKernel
-from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
 from part_3_metrics_collection.mice_ff5_batch_regression import run_mice_ff5_batch
 
 import pandas as pd
@@ -411,6 +401,7 @@ def run_pipeline(
  
     Steps 1a and 1b run once (independent of n_features and kernel).
     Steps 2 and 3 run once per n_features value (kernel has no effect).
+    Step 4 would be the filter step used in the AP trees, but not needed in this case.
     Steps 5-8 run once per n_features value and accept kernel_cls / state.
     Step 6.5 runs only when kernel_cls is not None; it is skipped for uniform.
  
@@ -483,6 +474,7 @@ def run_pipeline(
 if __name__ == '__main__':
     # Uniform kernel — default, no extra arguments needed:
     run_pipeline(steps=['1a', '1b', 2,3,4,5,6, 7])
+    #Running step 8 sepparetly is better, as it can compute the scores for multiple k features per split if ran at the end
     run_step8(10, None) #Computes the Sharpe ratios and ff5 alphas
 
     #Gaussian kernel for TMS, can use other state variables use steps prior to 5 if not ran previously, uncomment to run:
