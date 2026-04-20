@@ -131,8 +131,8 @@ The pruning stage selects a sparse set of portfolios from the candidates using L
 | `lasso_uniform.py` | CV helper for the uniform (static) kernel — faster since μ/Σ do not need recomputing each month. |
 | `lasso_kernel_validation.py` | CV helper for kernel-weighted runs. |
 | `lasso_kernel_full_fit.py` | Full out-of-sample fit using the winning hyperparameters, producing the test-period SDF. |
-| `lasso_valid_par_full.py` | Parallelised full-fit routine. |
-| `rolling_window.py` | Implements the 20-year rolling window used in robustness checks. |
+| `lasso_valid_par_full.py` | Routing for AP Pruning, and creates folds if selected. |
+
 
 ### Stage 3 — Metrics Collection (`part_3_metrics_collection/`)
 
@@ -194,8 +194,6 @@ collection. The active kernel is controlled by commenting/uncommenting the relev
 at the bottom of the file. The uniform run is active by default; Gaussian (TMS) and exponential runs are
 commented out.
 
-**`run_all_rp_cross_sections.py`** is a CLI-driven script for the RP-tree uniform baseline.
-Key flags: `--part1-only`, `--part2-only`, `--skip-existing-part1/2`, `--pick-best`, `--part2-parallel`.
 
 ---
 
@@ -273,6 +271,6 @@ To switch kernels, open `features_rp.py` and toggle the `run_pipeline(...)` call
 
 The original Bryzgalova et al. R code is preserved in `0_code/`. Tests in `tests/` compare
 key numerical outputs between the Python implementation and R reference values to validate correctness.
-However some of these might no longer work correctly due, but they did verify the correctness of the reproduction
-into python.
+However some of these might no longer work correctly due to changed functions,
+but they did verify the correctness of the reproduction into python.
 
