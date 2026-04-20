@@ -10,9 +10,6 @@ This project extends the Asset Pricing Trees (AP-Trees) framework of Bryzgalova,
 2. **Random Projection (RP) trees** as an alternative to the standard median-split AP-tree partitioning,
    enabling more flexible high-dimensional splits based on random linear combinations of characteristics.
 
-Model performance is assessed using out-of-sample Sharpe ratios (mathematically equivalent to SDF spanning
-under Hansen & Jagannathan, 1991), portfolio alphas from benchmark factor models (FF5), and net-of-transaction-cost returns.
-
 ---
 
 ## Authors
