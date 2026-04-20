@@ -24,9 +24,12 @@ from part_3_metrics_collection.mice_ff5 import mice_evaluate_master_portfolio
 # Configuration — λ grid (BPZ-style shrinkage). Middle ground: 5×4 = 20 combos (~2× the old 3×3).
 from part_2_AP_pruning.kernels.uniform import UniformKernel
 from part_2_AP_pruning.kernels.gaussian import GaussianKernel
+from part_2_AP_pruning.kernels.exponential import ExponentialKernel
 from part_3_metrics_collection.pick_best_lambdas import pick_best_lambda, pick_sr_n
+from part_3_metrics_collection.mice_ff5_batch_regression import run_mice_ff5_batch
 
 import pandas as pd
+from multiprocessing import Pool
 
 ALL_FEATURES = [
     'LME', 'BEME', 'r12_2', 'OP', 'Investment',
@@ -34,8 +37,8 @@ ALL_FEATURES = [
 ]
  
 # Values of n_features_per_split to sweep over
-N_FEATURES_GRID = [1]
-#N_FEATURES_GRID = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+#N_FEATURES_GRID = [10]
+N_FEATURES_GRID = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
  
 # Fixed hyperparameters
 N_TREES     = 81
@@ -72,15 +75,52 @@ def _subdir(n_features: int) -> str:
 def _kernel_label(kernel_cls) -> str:
     return kernel_cls.__name__ if kernel_cls is not None else 'UniformKernel'
 
-def _load_state() -> pd.Series:
+def _load_state(col: str = 'svar') -> pd.Series:
     """
     Load the state variable series aligned to the portfolio return rows.
     Used only for the Gaussian kernel — pass to Mice_RP_Pruning as state=.
     """
     df = pd.read_csv(STATE_VARS_PATH)
-    state_col = [c for c in df.columns if c not in ('MthCalDt', 'date')][0]
-    return df[state_col].reset_index(drop=True)
+    return df[col].reset_index(drop=True)
 
+_state = None
+_kernel_cls = None
+
+def init_worker(state, kernel_cls):
+    global _state, _kernel_cls
+    _state = state
+    _kernel_cls = kernel_cls
+
+def run_nf_block(args):
+    """Run steps 5–8 for a single n_features value."""
+    nf, steps_to_run = args
+    
+    print(f"\n{'='*65}")
+    print(f"  [Worker] n_features_per_split={nf} | kernel={_kernel_label(_kernel_cls)}")
+    print(f"{'='*65}")
+    
+    best_result = None
+    
+    for step in steps_to_run:
+        if step == 5:
+            STEPS[step](nf, kernel_cls=_kernel_cls, state=_state)
+        elif step == 6:
+            ret = STEPS[step](nf, kernel_cls=_kernel_cls, state=_state)
+            if _kernel_cls is not None:
+                best_result = ret
+        elif step == 6.5:
+            if _kernel_cls is None:
+                print(f"  [nf={nf}] Step 6.5: skipped (uniform kernel)")
+            else:
+                if best_result is None:
+                    raise RuntimeError("Step 6.5 requires step 6 to run first.")
+                STEPS[step](nf, kernel_cls=_kernel_cls, state=_state, best_result=best_result)
+        elif step in (7, 8):
+            STEPS[step](nf, kernel_cls=_kernel_cls)
+        elif step in (2, 3):
+            STEPS[step](nf)  # kernel-independent
+    
+    return nf
 
 def run_step1a() -> None:
     print("\n--- Step 1a: Prepare panel data ---")
@@ -181,6 +221,15 @@ def run_step6(n_features: int, kernel_cls=None, state=None) -> None:
             f"train={best_sr[0]:.4f}  valid={best_sr[1]:.4f}  test={best_sr[2]:.4f}"
         )
  
+        # ── Depth diagnostic ──────────────────────────────────────────────
+        subdir   = _subdir(n_features)
+        base     = Path('data/results/grid_search/mice_rp_tree') / 'uniform' / subdir
+        ports_df = pd.read_csv(base / f'Selected_Ports_{PORT_N}.csv')
+        depths   = [len(col.split('.')[1]) - 1 for col in ports_df.columns]
+        print(f"  Selected depths: {depths}")
+        print(f"  Selected columns: {list(ports_df.columns)}")
+        # ─────────────────────────────────────────────────────────────────
+
         print(f"\n--- Step 6 cont.: Mu / sigma (k={PORT_N}, nf={n_features}, kernel={label}) ---")
         stats = mice_get_mu_sigma(
             all_features         = ALL_FEATURES,
@@ -248,7 +297,7 @@ def run_step6_5(n_features: int, kernel_cls, state: pd.Series,
                   must contain 'best_idx' key: (i_best, j_best, h_best)
     """
     label = _kernel_label(kernel_cls)
-    print(f"\n--- Step 6.5: Gaussian full fit (k={PORT_N}, nf={n_features}, kernel={label}) ---")
+    print(f"\n--- Step 6.5: Kernel full fit (k={PORT_N}, nf={n_features}, kernel={label}) ---")
  
     i_best, j_best, h_best = best_result['best_idx']
     lambda0_star = LAMBDA0[i_best]
@@ -258,7 +307,14 @@ def run_step6_5(n_features: int, kernel_cls, state: pd.Series,
     bandwidths   = kernel_cls.bandwidth_grid_from_state(state, N_TRAIN_VALID, n=N_BANDWIDTHS)
     h_star       = bandwidths[h_best]
     kernel_star  = kernel_cls(h=h_star)
- 
+    
+    import inspect
+    sig = inspect.signature(kernel_cls.__init__)
+    if 'lam' in sig.parameters:
+        kernel_star = kernel_cls(lam=h_star, m=N_TRAIN_VALID)
+    else:
+        kernel_star = kernel_cls(h=h_star)
+
     subdir       = _subdir(n_features)
     kernel_name  = kernel_cls.__name__.lower().replace('kernel', '')
     full_fit_dir = GRID_PATH / kernel_name / subdir / 'full_fit'
@@ -305,21 +361,25 @@ def run_step7(n_features: int, kernel_cls=None) -> None:
  
  
 def run_step8(n_features: int, kernel_cls=None) -> None:
-    print(f"\n--- Step 8: FF5 alpha k={K_MIN}..{K_MAX} (nf={n_features}, kernel={_kernel_label(kernel_cls)}) ---")
-    for k in range(K_MIN, K_MAX + 1):
-        alpha, pval = mice_evaluate_master_portfolio(
-            all_features         = ALL_FEATURES,
-            n_features_per_split = n_features,
-            k                    = k,
-            grid_dir             = GRID_PATH,
-            ports_dir            = PORTFOLIO_PATH,
-            file_name            = PORT_FILE,
-            n_train_valid        = N_TRAIN_VALID,
-            kernel_cls           = kernel_cls,
-        )
-        if alpha is not None:
-            print(f"  k={k:2d}  FF5 alpha={alpha:.6f}  p={pval:.4f}")
+    #print(f"\n--- Step 8: FF5 alpha k={K_MIN}..{K_MAX} (nf={n_features}, kernel={_kernel_label(kernel_cls)}) ---")
+    #for k in range(K_MIN, K_MAX + 1):
+    #    alpha, pval = mice_evaluate_master_portfolio(
+    #        all_features         = ALL_FEATURES,
+    #        n_features_per_split = n_features,
+    #        k                    = k,
+    #        grid_dir             = GRID_PATH,
+    #        ports_dir            = PORTFOLIO_PATH,
+    #        file_name            = PORT_FILE,
+    #        n_train_valid        = N_TRAIN_VALID,
+    #        kernel_cls           = kernel_cls,
+    #    )
+    #    if alpha is not None:
+    #        print(f"  k={k:2d}  FF5 alpha={alpha:.6f}  p={pval:.4f}")
  
+    run_mice_ff5_batch(n_features_grid= N_FEATURES_GRID,
+                       k = 10,
+                       kernel_cls=kernel_cls
+                       )
  
 # ── Master pipeline ───────────────────────────────────────────────────────────
  
@@ -335,7 +395,7 @@ STEPS = {
     6: run_step6,
     6.5: run_step6_5,
     7: run_step7,
-    #8: run_step8,
+    8: run_step8,
 }
  
  
@@ -344,6 +404,7 @@ def run_pipeline(
     steps: list           = None,
     kernel_cls            = None,
     state                 = None,
+    n_workers             = 1,
 ) -> None:
     """
     Run selected pipeline steps for every n_features value in n_features_grid.
@@ -392,62 +453,47 @@ def run_pipeline(
         if step in STEPS_ONCE:
             STEPS_ONCE[step]()
  
-    # Steps 2 onward — run once per n_features value
-    per_nf_steps = [s for s in steps_to_run if s in STEPS]
-    if per_nf_steps:
+    # Steps 2/3: run sequentially per nf (fast, tree-building)
+    sequential_steps = [s for s in steps_to_run if s in (2, 3)]
+    if sequential_steps:
         for nf in n_features_grid:
-            print(f"\n{'=' * 65}")
-            print(f"  n_features_per_split = {nf}  |  kernel = {_kernel_label(kernel_cls)}")
-            print(f"  subdir: {_subdir(nf)}")
-            print(f"{'=' * 65}")
- 
-            # Step 6 may return best_result for step 6.5 to consume
-            best_result = None
- 
-            for step in per_nf_steps:
-                if step in (2, 3):
-                    STEPS[step](nf)
- 
-                elif step == 5:
-                    STEPS[step](nf, kernel_cls=kernel_cls, state=state)
- 
-                elif step == 6:
-                    ret = STEPS[step](nf, kernel_cls=kernel_cls, state=state)
-                    if kernel_cls is not None:
-                        best_result = ret   # carry forward to step 6.5
- 
-                elif step == 6.5:
-                    if kernel_cls is None:
-                        print("\n--- Step 6.5: skipped (uniform kernel) ---")
-                    else:
-                        if best_result is None:
-                            raise RuntimeError(
-                                "Step 6.5 requires step 6 to have run first "
-                                "in the same pipeline call to obtain best_result."
-                            )
-                        STEPS[step](nf, kernel_cls=kernel_cls,
-                                    state=state, best_result=best_result)
- 
-                else:
-                    STEPS[step](nf, kernel_cls=kernel_cls)
- 
-    print("\n" + "=" * 65)
+            for step in sequential_steps:
+                STEPS[step](nf)
+
+    # Steps 5–8: parallelise across n_features_grid
+    parallel_steps = [s for s in steps_to_run if s in STEPS and s not in (2, 3)]
+    if parallel_steps and n_features_grid:
+        args_list = [(nf, parallel_steps) for nf in n_features_grid]
+        
+        with Pool(
+            processes=n_workers,
+            initializer=init_worker,
+            initargs=(state, kernel_cls),
+        ) as pool:
+            for nf_done in pool.imap_unordered(run_nf_block, args_list):
+                print(f"\n  [Pipeline] Finished nf={nf_done}")
+
+    print("\n" + "="*65)
     print("  Pipeline complete.")
-    print("=" * 65)
+    print("="*65)
  
  
 # ── Entry point ───────────────────────────────────────────────────────────────
  
 if __name__ == '__main__':
     # Uniform kernel — default, no extra arguments needed:
-    run_pipeline(steps=[6])
-    run_pipeline(steps=[6, 6.5], kernel_cls= GaussianKernel, state= _load_state())
+    run_pipeline(steps=['1a', '1b', 2,3,4,5,6, 7])
+    run_step8(10, None) #Computes the Sharpe ratios and ff5 alphas
+
+    #Gaussian kernel for TMS, can use other state variables use steps prior to 5 if not ran previously, uncomment to run:
+    #run_pipeline(steps=[5,6,6.5], kernel_cls=GaussianKernel, state=_load_state('TMS'), n_workers=2)
+    #run_step8(10, kernel_cls= GaussianKernel)
 
 
-    # Gaussian kernel example — uncomment to run:
-    # from part_2_AP_pruning.kernels.gaussian import GaussianKernel
-    # run_pipeline(
-    #     steps      = [5, 6, 6.5, 7, 8],
-    #     kernel_cls = GaussianKernel,
-    #     state      = _load_state(),
-    # )
+    #Exponential kernel  use steps prior to 5 if not ran previously, uncomment to run:
+    #run_pipeline(steps=[5,6,6.5], 
+    #             kernel_cls=ExponentialKernel, 
+    #             state=_load_state('TMS'), #passed through but ignored internally
+    #             n_workers=2)
+    # run_step8(10, kernel_cls= ExponentialKernel)
+

@@ -121,6 +121,11 @@ def mice_pick_best_lambda(all_features, n_features_per_split,
         selected_ports.to_csv(base / f'Selected_Ports_{port_n}.csv', index=False)
         pd.DataFrame(weights[nonzero_mask]).to_csv(
             base / f'Selected_Ports_Weights_{port_n}.csv', index=False)
+        
+        pd.DataFrame([{
+        'lambda0': lambda0[i_best],
+        'lambda2': lambda2[j_best],
+        }]).to_csv(base / f'best_hyperparams_{port_n}.csv', index=False)
  
     return np.array([train_SR[i_best, j_best], valid_SR[i_best, j_best], test_SR[i_best, j_best]])
  
@@ -286,9 +291,14 @@ def mice_get_mu_sigma(all_features, n_features_per_split, ap_prune_result_path,
     Return mu (mean) and sigma (std) of the SDF for the selected portfolio
     at a given k, on both the train and test windows.
  
+    The SDF is normalised to unit variance on the training window before
+    computing mu and sigma, making results comparable across n_features values.
+    The SR is scale-invariant and unaffected by this normalisation.
+ 
     Mirrors get_mu_sigma (AP trees). Differences:
       - subdir encodes all_features and n_features_per_split
       - reads from {kernel_name}/ subfolder via _base_path
+      - normalises SDF to unit train-window variance
  
     Parameters
     ----------
@@ -317,6 +327,12 @@ def mice_get_mu_sigma(all_features, n_features_per_split, ap_prune_result_path,
  
     sdf_train = ports_train.values @ weights
     sdf_test  = ports_test.values  @ weights
+ 
+    # Normalise to unit train-window variance so mu and sigma are comparable
+    # across n_features values. SR is scale-invariant and unaffected.
+    scale     = sdf_train.std(ddof=1)
+    sdf_train = sdf_train / scale
+    sdf_test  = sdf_test  / scale
  
     return {
         'train': {
